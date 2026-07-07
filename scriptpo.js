@@ -4,8 +4,10 @@
 const SUPABASE_URL = "https://lzgeocvfzmjheywonenf.supabase.co"; 
 const SUPABASE_ANON_KEY = "sb_publishable_GYTVNGz5s917E8l245RSWQ_iTCFF6et"; 
 
-// SỬA LỖI TRIỆT ĐỂ: Dùng trực tiếp đối tượng window hệ thống để không bao giờ bị lỗi trùng tên biến
-const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+// Khởi tạo an toàn tuyệt đối từ window hệ thống tránh lỗi 'not defined' gây crash trang
+const supabase = (window.supabase && typeof window.supabase.createClient === "function") 
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
+  : null;
 
 const STATUS_FLOW = ["ordered", "confirmed", "producing", "shipping", "received", "done"];
 const STATUS_LABEL = {
@@ -37,26 +39,29 @@ function initAuthLogic() {
   const mainApp = document.getElementById("mainApp");
 
   if (!supabase) {
-    console.error("Thư viện Supabase chưa được tải thành công. Vui lòng kiểm tra lại kết nối mạng!");
-  } else {
-    try {
-      supabase.auth.onAuthStateChange((event, session) => {
-        if (session) {
-          currentSessionUser = session.user;
-          if (authScreen) authScreen.style.setProperty("display", "none", "important");
-          if (mainApp) mainApp.style.display = "grid";
-          document.getElementById("userEmailDisplay").textContent = session.user.email;
-          fetchOrdersFromSupabase();
-          loadZaloSettings();
-        } else {
-          currentSessionUser = null;
-          if (authScreen) authScreen.style.setProperty("display", "flex", "important");
-          if (mainApp) mainApp.style.display = "none";
-        }
-      });
-    } catch (e) {
-      console.error("Lỗi Auth Hook:", e);
-    }
+    console.error("Thư viện Supabase CDN chưa được tải thành công. Vui lòng kiểm tra kết nối mạng!");
+    alert("Không thể kết nối tới máy chủ Supabase. Vui lòng kiểm tra lại kết nối mạng!");
+    if (authScreen) authScreen.style.setProperty("display", "flex", "important");
+    return;
+  }
+
+  try {
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        currentSessionUser = session.user;
+        if (authScreen) authScreen.style.setProperty("display", "none", "important");
+        if (mainApp) mainApp.style.display = "grid";
+        document.getElementById("userEmailDisplay").textContent = session.user.email;
+        fetchOrdersFromSupabase();
+        loadZaloSettings();
+      } else {
+        currentSessionUser = null;
+        if (authScreen) authScreen.style.setProperty("display", "flex", "important");
+        if (mainApp) mainApp.style.display = "none";
+      }
+    });
+  } catch (e) {
+    console.error("Lỗi đồng bộ Auth:", e);
   }
 
   let isSignUpMode = false;
@@ -66,7 +71,7 @@ function initAuthLogic() {
   const tabLogin = document.getElementById("tabLogin");
   const tabRegister = document.getElementById("tabRegister");
 
-  // Chuyển đổi qua lại giữa Đăng nhập / Tạo tài khoản cực mượt
+  // Đổi tab mượt mà độc lập
   tabLogin.addEventListener("click", () => {
     isSignUpMode = false;
     authTitle.textContent = "Đăng nhập hệ thống";
@@ -85,11 +90,7 @@ function initAuthLogic() {
 
   authForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!supabase) {
-      alert("Kết nối Supabase lỗi!");
-      return;
-    }
-
+    
     const email = document.getElementById("authEmail").value.trim();
     const password = document.getElementById("authPassword").value.trim();
 
@@ -125,7 +126,7 @@ function initAuthLogic() {
   });
 }
 
-/* ========================= KẾT NỐI TẢI DỮ LIỆU CƠ SỞ DỮ LIỆU ========================= */
+/* ========================= ĐỒNG BỘ DỮ LIỆU DATABASE ========================= */
 async function fetchOrdersFromSupabase() {
   if (!supabase) return;
   try {
@@ -247,9 +248,10 @@ function renderList() {
   });
 }
 
-/* ========================= NGHIỆP VỤ CRUD VỚI DATABASE ========================= */
+/* ========================= NGHIỆP VỤ THAO TÁC CRUD ========================= */
 async function savePO() {
   if (!supabase) return;
+  const code = document.getElementById("poCode").value.trim();
   const supplier = document.getElementById("poSupplier").value.trim();
   const owner = document.getElementById("poOwner").value.trim();
   const orderDate = document.getElementById("poOrderDate").value;
@@ -257,7 +259,7 @@ async function savePO() {
   const contact = document.getElementById("poContact").value.trim();
   const notes = document.getElementById("poNotes").value.trim();
 
-  if (!supplier || !owner || !orderDate || !dueDate) {
+  if (!code || !supplier || !owner || !orderDate || !dueDate) {
     showToast("Vui lòng điền đầy đủ thông tin bắt buộc (*)");
     return;
   }
@@ -279,6 +281,7 @@ async function savePO() {
 
   try {
     if (editingId) {
+      // Cập nhật đơn
       const { error: poError } = await supabase
         .from("purchase_orders")
         .update({ supplier, contact, owner, order_date: orderDate, due_date: dueDate, notes })
@@ -293,8 +296,17 @@ async function savePO() {
       }
       showToast("Cập nhật đơn hàng thành công!");
     } else {
-      const nextNum = orders.length + 1;
-      const code = `PO-${new Date().getFullYear()}-${String(nextNum).padStart(3, "0")}`;
+      // Tạo đơn với mã tự tạo (Kiểm tra trùng lặp)
+      const { data: duplicateCheck } = await supabase
+        .from("purchase_orders")
+        .select("code")
+        .eq("code", code)
+        .maybeSingle();
+
+      if (duplicateCheck) {
+        alert("Mã đơn hàng này đã tồn tại! Vui lòng đặt mã khác.");
+        return;
+      }
 
       const { data: newPo, error: poError } = await supabase
         .from("purchase_orders")
@@ -344,15 +356,15 @@ async function advanceStatus() {
 }
 
 async function deletePO() {
-  if (!editingId || !confirm("Bạn có chắc muốn xóa đơn hàng này vĩnh viễn?") || !supabase) return;
+  if (!editingId || !confirm("Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng này?") || !supabase) return;
   try {
     const { error } = await supabase.from("purchase_orders").delete().eq("id", editingId);
     if (error) throw error;
-    showToast("Đã xóa đơn hàng.");
+    showToast("Đã xóa đơn hàng khỏi hệ thống.");
     closeModal();
     fetchOrdersFromSupabase();
   } catch (err) {
-    showToast("Lỗi khi xóa: " + err.message);
+    showToast("Lỗi khi xóa đơn: " + err.message);
   }
 }
 
@@ -430,7 +442,7 @@ function simulateZaloNotifications() {
 function openZaloModal() { document.getElementById("zaloModalOverlay").hidden = false; }
 function closeZaloModal() { document.getElementById("zaloModalOverlay").hidden = true; }
 
-/* ========================= HÀM PHỤ ĐỊNH DẠNG HIỂN THỊ ========================= */
+/* ========================= HÀM PHỤ TRỢ ========================= */
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function daysUntil(dateStr) {
   const today = new Date(todayISO());
@@ -526,7 +538,12 @@ function openAddModal() {
   editingId = null;
   document.getElementById("poForm").reset();
   document.getElementById("poId").value = "";
-  document.getElementById("poCode").value = "";
+  
+  // Cho phép tự do tạo mã đơn mới
+  const codeInput = document.getElementById("poCode");
+  codeInput.value = "";
+  codeInput.removeAttribute("readonly");
+
   document.getElementById("poOrderDate").value = todayISO();
   document.getElementById("poDueDate").value = todayISO();
   document.getElementById("itemsContainer").innerHTML = "";
@@ -542,7 +559,12 @@ function openEditModal(id) {
   if (!order) return;
 
   document.getElementById("poId").value = order.id;
-  document.getElementById("poCode").value = order.code;
+  
+  // Khóa ô mã đơn lại khi chỉnh sửa đơn cũ để an toàn dữ liệu
+  const codeInput = document.getElementById("poCode");
+  codeInput.value = order.code;
+  codeInput.setAttribute("readonly", "true");
+
   document.getElementById("poSupplier").value = order.supplier;
   document.getElementById("poContact").value = order.contact || "";
   document.getElementById("poOwner").value = order.owner;
