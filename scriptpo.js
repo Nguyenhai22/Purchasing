@@ -52,18 +52,29 @@ function initAuthLogic() {
   }
 
   try {
+    let hasLoadedData = false;
     supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         currentSessionUser = session.user;
         if (authScreen) authScreen.style.setProperty("display", "none", "important");
         if (mainApp) mainApp.style.display = "grid";
         document.getElementById("userEmailDisplay").textContent = session.user.email;
-        fetchOrdersFromSupabase();
-        fetchSuppliers();
-        fetchProducts();
-        loadZaloSettings();
+
+        // QUAN TRỌNG: onAuthStateChange còn tự kích hoạt ngầm khi tab được
+        // focus lại hoặc token được làm mới (TOKEN_REFRESHED), không chỉ lúc
+        // đăng nhập thật sự. Nếu cứ fetch lại dữ liệu mỗi lần như vậy sẽ xóa
+        // mất các lựa chọn (bulk actions) người dùng đang thao tác dở.
+        // Chỉ tải dữ liệu đầy đủ 1 lần khi phiên đăng nhập được xác lập.
+        if (!hasLoadedData) {
+          hasLoadedData = true;
+          fetchOrdersFromSupabase();
+          fetchSuppliers();
+          fetchProducts();
+          loadZaloSettings();
+        }
       } else {
         currentSessionUser = null;
+        hasLoadedData = false;
         if (authScreen) authScreen.style.setProperty("display", "flex", "important");
         if (mainApp) mainApp.style.display = "none";
       }
@@ -364,7 +375,8 @@ function setView(view) {
 async function bulkApplyStatus() {
   const newStatus = document.getElementById("bulkStatusSelect").value;
   if (!newStatus) { showToast("Vui lòng chọn trạng thái muốn áp dụng."); return; }
-  if (selectedIds.size === 0 || !supabase) return;
+  if (!supabase) { showToast("Chưa kết nối được máy chủ dữ liệu."); return; }
+  if (selectedIds.size === 0) { showToast("Vui lòng tick chọn ít nhất 1 đơn hàng."); return; }
 
   try {
     const { error } = await supabase
@@ -381,7 +393,8 @@ async function bulkApplyStatus() {
 }
 
 async function bulkDeleteOrders() {
-  if (selectedIds.size === 0 || !supabase) return;
+  if (!supabase) { showToast("Chưa kết nối được máy chủ dữ liệu."); return; }
+  if (selectedIds.size === 0) { showToast("Vui lòng tick chọn ít nhất 1 đơn hàng."); return; }
   if (!confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn ${selectedIds.size} đơn hàng đã chọn?`)) return;
 
   try {
