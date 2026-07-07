@@ -268,6 +268,13 @@ function renderList() {
   updateBulkBar(filtered);
 }
 
+function itemNamesSummary(order) {
+  const names = (order.items || []).map(it => it.name).filter(Boolean);
+  if (names.length === 0) return "";
+  if (names.length <= 2) return names.join(", ");
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+}
+
 function renderCardView(filtered) {
   return filtered.map(order => {
     const urg = urgency(order);
@@ -275,6 +282,8 @@ function renderCardView(filtered) {
     if (urg === "late") badge = `<span class="badge danger">Trễ ${Math.abs(daysUntil(order.due_date))} ngày</span>`;
     else if (urg === "soon") badge = `<span class="badge warning">Còn ${daysUntil(order.due_date)} ngày</span>`;
     else if (order.status === "done") badge = `<span class="badge done">Hoàn tất</span>`;
+
+    const itemsSummary = itemNamesSummary(order);
 
     return `
       <article class="po-card" data-id="${order.id}">
@@ -285,7 +294,7 @@ function renderCardView(filtered) {
           <div class="po-card-top" style="flex:1; margin-bottom:0;">
             <div>
               <div class="po-card-id">${order.code}</div>
-              <div class="po-card-supplier">${escapeHtml(order.supplier)}</div>
+              <div class="po-card-supplier">${escapeHtml(order.supplier)}${itemsSummary ? `<span class="po-card-items"> -- ${escapeHtml(itemsSummary)}</span>` : ""}</div>
               <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong></div>
               <div class="po-card-meta">Hạn giao: ${fmtDate(order.due_date)} · Tổng: ${fmtMoney(orderTotal(order))} · ${order.items.length} mặt hàng</div>
             </div>
