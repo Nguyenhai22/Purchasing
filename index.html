@@ -84,21 +84,39 @@
       <button class="filter-chip" data-status="done">Hoàn tất</button>
     </nav>
 
-    <button class="btn-settings" id="btnZaloSettings" style="margin-top: auto; margin-bottom: 8px;">
-      <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:6px;"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-      Cấu hình Zalo
-    </button>
-    
-    <button class="btn-settings" id="btnLogout" style="background: var(--rust-bg); color: var(--rust); border-color: transparent; font-weight: 600;">
-      Đăng xuất tài khoản
-    </button>
+    <div class="sidebar-tools" style="margin-top: auto;">
+      <button class="btn-settings" id="btnSuppliers">
+        <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:6px;"><path fill="currentColor" d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2a3 3 0 106 0h6a3 3 0 106 0h2v-5l-3-4zM6.5 18.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm13.5-9l1.96 3H17V9.5h3zm-1.5 9a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+        Nhà cung cấp
+      </button>
+      <button class="btn-settings" id="btnProducts">
+        <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:6px;"><path fill="currentColor" d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM12 4.15L18.5 8 12 11.85 5.5 8 12 4.15zM5 9.85l6 3.45v6.85l-6-3.45V9.85zm8 10.3v-6.85l6-3.45v6.85l-6 3.45z"/></svg>
+        Danh mục sản phẩm
+      </button>
+      <button class="btn-settings" id="btnZaloSettings">
+        <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:6px;"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        Cấu hình Zalo
+      </button>
+
+      <button class="btn-settings" id="btnLogout" style="background: var(--rust-bg); color: var(--rust); border-color: transparent; font-weight: 600;">
+        Đăng xuất tài khoản
+      </button>
+    </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
       <div class="search-wrap">
         <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 10-.7.7l.27.28v.79l5 5L20.5 19l-5-5zm-6 0a4.5 4.5 0 110-9 4.5 4.5 0 010 9z"/></svg>
-        <input type="text" id="searchInput" placeholder="Tìm nhanh mã đơn, nhà cung cấp…">
+        <input type="text" id="searchInput" placeholder="Tìm nhanh mã đơn, nhà cung cấp, tên sản phẩm…">
+      </div>
+      <div class="view-toggle" id="viewToggle">
+        <button type="button" class="view-toggle-btn is-active" id="btnViewCard" title="Xem dạng thẻ">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"/></svg>
+        </button>
+        <button type="button" class="view-toggle-btn" id="btnViewTable" title="Xem dạng bảng">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 5h18v3H3V5zm0 5h18v3H3v-3zm0 5h18v3H3v-3z"/></svg>
+        </button>
       </div>
       <button class="btn-primary" id="btnAddPO">
         <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
@@ -138,6 +156,27 @@
       </div>
     </section>
 
+    <div class="bulk-bar" id="bulkBar" hidden>
+      <label class="bulk-select-all">
+        <input type="checkbox" id="selectAllCheckbox">
+        <span id="bulkCountLabel">Đã chọn 0 đơn</span>
+      </label>
+      <div class="bulk-actions">
+        <select id="bulkStatusSelect">
+          <option value="">-- Đổi trạng thái thành --</option>
+          <option value="ordered">Đã đặt hàng</option>
+          <option value="confirmed">NCC xác nhận</option>
+          <option value="producing">Đang chuẩn bị</option>
+          <option value="shipping">Đang giao hàng</option>
+          <option value="received">Đã nhận hàng</option>
+          <option value="done">Hoàn tất</option>
+        </select>
+        <button class="btn-ghost-sm" id="btnBulkApplyStatus">Áp dụng</button>
+        <button class="btn-ghost-sm bulk-danger" id="btnBulkDelete">Xóa các đơn đã chọn</button>
+        <button class="btn-text" id="btnBulkClear">Bỏ chọn</button>
+      </div>
+    </div>
+
     <section class="po-list" id="poList"></section>
 
     <div class="empty-state" id="emptyState" hidden>
@@ -165,7 +204,7 @@
           </div>
           <div class="form-field">
             <label>Nhà cung cấp *</label>
-            <input type="text" id="poSupplier" required placeholder="Nhập tên đơn vị bán...">
+            <input type="text" id="poSupplier" required placeholder="Nhập tên đơn vị bán..." list="supplierDatalist">
           </div>
           <div class="form-field">
             <label>Số điện thoại liên hệ</label>
@@ -265,6 +304,119 @@
     </div>
   </div>
 </div>
+
+<div class="modal-overlay" id="supplierModalOverlay" hidden>
+  <div class="modal" style="max-width: 760px;">
+    <div class="modal-head">
+      <h2>Quản lý nhà cung cấp</h2>
+      <button class="modal-close" id="btnCloseSupplier">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="manage-toolbar">
+        <input type="text" id="supplierSearchInput" placeholder="Tìm nhà cung cấp...">
+        <button class="btn-ghost-sm" id="btnNewSupplier">+ Thêm nhà cung cấp</button>
+      </div>
+
+      <div class="manage-form" id="supplierFormBox" hidden>
+        <input type="hidden" id="supplierId">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Tên nhà cung cấp *</label>
+            <input type="text" id="supplierName" placeholder="Tên đơn vị bán...">
+          </div>
+          <div class="form-field">
+            <label>Người liên hệ</label>
+            <input type="text" id="supplierContact" placeholder="Tên người liên hệ...">
+          </div>
+          <div class="form-field">
+            <label>Số điện thoại</label>
+            <input type="text" id="supplierPhone" placeholder="09xx...">
+          </div>
+          <div class="form-field">
+            <label>Email</label>
+            <input type="email" id="supplierEmail" placeholder="email@...">
+          </div>
+          <div class="form-field" style="grid-column: span 2;">
+            <label>Địa chỉ</label>
+            <input type="text" id="supplierAddress" placeholder="Địa chỉ nhà cung cấp...">
+          </div>
+        </div>
+        <div class="form-field" style="margin-top:12px;">
+          <label>Đánh giá</label>
+          <div class="rating-stars" id="supplierRatingStars" data-rating="0">
+            <span data-star="1">★</span><span data-star="2">★</span><span data-star="3">★</span><span data-star="4">★</span><span data-star="5">★</span>
+          </div>
+        </div>
+        <div class="form-field" style="margin-top:12px;">
+          <label>Ghi chú</label>
+          <textarea id="supplierNotes" rows="2" placeholder="Ghi chú về nhà cung cấp..."></textarea>
+        </div>
+        <div class="manage-form-actions">
+          <button class="btn-text" id="btnDeleteSupplier" style="color:var(--rust);">Xóa nhà cung cấp</button>
+          <div style="display:flex; gap:10px; margin-left:auto;">
+            <button class="btn-ghost" id="btnCancelSupplierForm">Hủy</button>
+            <button class="btn-primary" id="btnSaveSupplier">Lưu</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="manage-list" id="supplierList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="productModalOverlay" hidden>
+  <div class="modal" style="max-width: 720px;">
+    <div class="modal-head">
+      <h2>Danh mục sản phẩm</h2>
+      <button class="modal-close" id="btnCloseProduct">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="manage-toolbar">
+        <input type="text" id="productSearchInput" placeholder="Tìm sản phẩm...">
+        <button class="btn-ghost-sm" id="btnNewProduct">+ Thêm sản phẩm</button>
+      </div>
+
+      <div class="manage-form" id="productFormBox" hidden>
+        <input type="hidden" id="productId">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Tên sản phẩm *</label>
+            <input type="text" id="productName" placeholder="Tên sản phẩm...">
+          </div>
+          <div class="form-field">
+            <label>Đơn giá mặc định</label>
+            <input type="number" id="productPrice" min="0" placeholder="0">
+          </div>
+          <div class="form-field">
+            <label>Đơn vị tính</label>
+            <input type="text" id="productUnit" placeholder="cái, thùng, kg...">
+          </div>
+          <div class="form-field">
+            <label>Danh mục</label>
+            <input type="text" id="productCategory" placeholder="Nhóm hàng...">
+          </div>
+        </div>
+        <div class="form-field" style="margin-top:12px;">
+          <label>Ghi chú</label>
+          <textarea id="productNotes" rows="2" placeholder="Ghi chú về sản phẩm..."></textarea>
+        </div>
+        <div class="manage-form-actions">
+          <button class="btn-text" id="btnDeleteProduct" style="color:var(--rust);">Xóa sản phẩm</button>
+          <div style="display:flex; gap:10px; margin-left:auto;">
+            <button class="btn-ghost" id="btnCancelProductForm">Hủy</button>
+            <button class="btn-primary" id="btnSaveProduct">Lưu</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="manage-list" id="productList"></div>
+    </div>
+  </div>
+</div>
+
+<datalist id="supplierDatalist"></datalist>
+<datalist id="productDatalist"></datalist>
 
 <script src="scriptpo.js"></script>
 </body>

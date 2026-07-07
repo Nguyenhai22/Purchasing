@@ -59,8 +59,9 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 .filter-chip:hover{background:var(--ink-800); color:#fff;}
 .filter-chip.is-active{background:var(--ink-700); color:#fff; font-weight:600;}
 
-.btn-settings{background:transparent; border:1px solid var(--ink-700); color:var(--slate); padding:10px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:auto; transition:all .15s ease;}
+.btn-settings{background:transparent; border:1px solid var(--ink-700); color:var(--slate); padding:10px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:all .15s ease;}
 .btn-settings:hover{background:var(--ink-800); color:#fff; border-color:var(--ink-600);}
+.sidebar-tools{display:flex; flex-direction:column; gap:8px;}
 
 /* ============ MAIN CONTENT ============ */
 .main{padding:32px; display:flex; flex-direction:column; max-width:1200px; width:100%; margin:0 auto;}
@@ -270,3 +271,79 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
   color: var(--ink-900);
   text-align: center;
 }
+
+/* ==========================================================================
+   VIEW TOGGLE (Thẻ / Bảng)
+   ========================================================================== */
+.view-toggle{display:flex; background:var(--paper-card); border:1px solid var(--line); border-radius:8px; padding:3px; box-shadow:var(--shadow-sm);}
+.view-toggle-btn{background:transparent; border:none; color:var(--slate); padding:7px 10px; border-radius:6px; cursor:pointer; display:flex; align-items:center; transition:all .15s ease;}
+.view-toggle-btn:hover{color:var(--ink-900);}
+.view-toggle-btn.is-active{background:var(--ink-900); color:#fff;}
+
+/* ==========================================================================
+   BULK ACTIONS BAR
+   ========================================================================== */
+.bulk-bar{
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  background:var(--ink-900); color:#fff; padding:12px 18px; border-radius:10px;
+  margin-bottom:12px; box-shadow:var(--shadow-md); flex-wrap:wrap;
+}
+.bulk-select-all{display:flex; align-items:center; gap:10px; font-size:13.5px; font-weight:600; cursor:pointer;}
+.bulk-select-all input{width:16px; height:16px; cursor:pointer;}
+.bulk-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.bulk-actions select{border:1px solid var(--ink-600); background:var(--ink-800); color:#fff; border-radius:6px; padding:7px 10px; font-size:13px; outline:none;}
+.bulk-bar .btn-ghost-sm{background:transparent; border:1px solid var(--ink-600); color:#fff;}
+.bulk-bar .btn-ghost-sm:hover{background:var(--ink-800);}
+.bulk-bar .btn-ghost-sm.bulk-danger{border-color:var(--rust); color:#f5c9c2;}
+.bulk-bar .btn-ghost-sm.bulk-danger:hover{background:var(--rust);}
+.bulk-bar .btn-text{color:#cdd3da;}
+.bulk-bar .btn-text:hover{color:#fff;}
+
+/* Checkbox on card / table row */
+.po-select-box{position:relative; display:flex; align-items:flex-start; padding-top:2px;}
+.po-select-box input{width:17px; height:17px; cursor:pointer;}
+.po-card-top-inner{display:flex; align-items:flex-start; gap:12px;}
+
+/* ==========================================================================
+   TABLE VIEW
+   ========================================================================== */
+.po-table{width:100%; border-collapse:collapse; background:var(--paper-card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;}
+.po-table thead th{background:#f5f6f4; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; color:var(--slate); letter-spacing:.03em; padding:10px 12px; border-bottom:1px solid var(--line); white-space:nowrap;}
+.po-table tbody td{padding:12px; font-size:13.5px; border-bottom:1px solid var(--line); vertical-align:middle;}
+.po-table tbody tr{cursor:pointer; transition:background .12s ease;}
+.po-table tbody tr:hover{background:#f9faf8;}
+.po-table tbody tr:last-child td{border-bottom:none;}
+.po-table td.col-code{font-family:var(--font-mono); font-weight:600; color:var(--amber);}
+.po-table td.col-supplier{font-weight:600;}
+.po-table td.col-checkbox{width:36px;}
+.po-table td.col-checkbox input{width:16px; height:16px; cursor:pointer;}
+
+/* ==========================================================================
+   MANAGEMENT MODALS (Nhà cung cấp / Danh mục sản phẩm)
+   ========================================================================== */
+.manage-toolbar{display:flex; gap:10px; margin-bottom:16px;}
+.manage-toolbar input{flex:1; border:1px solid var(--line); border-radius:8px; padding:9px 14px; font-size:14px; outline:none;}
+.manage-toolbar input:focus{border-color:var(--ink-600);}
+
+.manage-form{background:#f5f6f4; border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:18px;}
+.manage-form-actions{display:flex; align-items:center; margin-top:16px;}
+
+.manage-list{display:flex; flex-direction:column; gap:8px;}
+.manage-item{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:var(--paper-card); border:1px solid var(--line); border-radius:8px;
+  padding:12px 16px; cursor:pointer; transition:all .15s ease;
+}
+.manage-item:hover{border-color:var(--slate); box-shadow:var(--shadow-sm);}
+.manage-item-main{display:flex; flex-direction:column; gap:3px; min-width:0;}
+.manage-item-title{font-weight:600; font-size:14.5px; color:var(--ink-900); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.manage-item-sub{font-size:12.5px; color:var(--slate);}
+.manage-item-side{display:flex; align-items:center; gap:14px; flex-shrink:0;}
+.manage-empty{text-align:center; color:var(--slate); font-size:13.5px; padding:24px; border:1px dashed var(--line); border-radius:8px;}
+
+/* Rating stars */
+.rating-stars{display:inline-flex; gap:4px; font-size:22px; line-height:1; cursor:pointer;}
+.rating-stars span{color:var(--line); transition:color .1s ease;}
+.rating-stars span.is-filled{color:var(--amber);}
+.rating-display{color:var(--amber); font-size:13px; letter-spacing:1px;}
+.rating-display .empty{color:var(--line);}

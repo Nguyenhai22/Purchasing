@@ -21,12 +21,18 @@ const STATION_SHORT = {
 
 /* ========================= TRẠNG THÁI TOÀN CỤC ========================= */
 let orders = [];
+let suppliers = [];
+let products = [];
 let currentStatusFilter = "all";
 let currentQuickFilter = "all";
 let searchTerm = "";
 let editingId = null;
 let detailId = null;
 let currentSessionUser = null;
+let currentView = localStorage.getItem("po_tracker_view") || "card";
+let selectedIds = new Set();
+let editingSupplierId = null;
+let editingProductId = null;
 
 /* ========================= KHỞI CHẠY HỆ THỐNG VÀ AUTH ========================= */
 document.addEventListener("DOMContentLoaded", () => {
@@ -53,6 +59,8 @@ function initAuthLogic() {
         if (mainApp) mainApp.style.display = "grid";
         document.getElementById("userEmailDisplay").textContent = session.user.email;
         fetchOrdersFromSupabase();
+        fetchSuppliers();
+        fetchProducts();
         loadZaloSettings();
       } else {
         currentSessionUser = null;
@@ -142,6 +150,7 @@ async function fetchOrdersFromSupabase() {
       items: po.po_items || []
     }));
 
+    selectedIds.clear();
     buildFilterSelectOptions();
     renderStats();
     renderList();
@@ -180,8 +189,10 @@ function passesFilters(order) {
   if (currentQuickFilter === "late" && urgency(order) !== "late") return false;
 
   if (searchTerm) {
+    const term = searchTerm.toLowerCase();
     const combinedStr = (order.code + " " + order.supplier).toLowerCase();
-    if (!combinedStr.includes(searchTerm.toLowerCase())) return false;
+    const itemMatch = (order.items || []).some(it => (it.name || "").toLowerCase().includes(term));
+    if (!combinedStr.includes(term) && !itemMatch) return false;
   }
 
   const selSupplier = document.getElementById("filterSupplier").value;
@@ -216,11 +227,38 @@ function renderList() {
   if (filtered.length === 0) {
     list.innerHTML = "";
     empty.hidden = false;
+    updateBulkBar(filtered);
     return;
   }
   empty.hidden = true;
 
-  list.innerHTML = filtered.map(order => {
+  list.className = currentView === "table" ? "po-list po-list-table" : "po-list";
+  list.innerHTML = currentView === "table" ? renderTableView(filtered) : renderCardView(filtered);
+
+  // Click để mở chi tiết đơn (bỏ qua khi click vào checkbox)
+  list.querySelectorAll("[data-id]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".po-select-box") || e.target.classList.contains("row-select")) return;
+      openDetail(el.dataset.id);
+    });
+  });
+
+  // Checkbox chọn từng dòng
+  list.querySelectorAll(".row-select").forEach(cb => {
+    cb.checked = selectedIds.has(cb.dataset.id);
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", (e) => {
+      if (e.target.checked) selectedIds.add(e.target.dataset.id);
+      else selectedIds.delete(e.target.dataset.id);
+      updateBulkBar(filtered);
+    });
+  });
+
+  updateBulkBar(filtered);
+}
+
+function renderCardView(filtered) {
+  return filtered.map(order => {
     const urg = urgency(order);
     let badge = `<span class="badge neutral">${STATUS_LABEL[order.status]}</span>`;
     if (urg === "late") badge = `<span class="badge danger">Trễ ${Math.abs(daysUntil(order.due_date))} ngày</span>`;
@@ -229,23 +267,133 @@ function renderList() {
 
     return `
       <article class="po-card" data-id="${order.id}">
-        <div class="po-card-top">
-          <div>
-            <div class="po-card-id">${order.code}</div>
-            <div class="po-card-supplier">${escapeHtml(order.supplier)}</div>
-            <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong></div>
-            <div class="po-card-meta">Hạn giao: ${fmtDate(order.due_date)} · Tổng: ${fmtMoney(orderTotal(order))} · ${order.items.length} mặt hàng</div>
+        <div class="po-card-top-inner">
+          <div class="po-select-box">
+            <input type="checkbox" class="row-select" data-id="${order.id}">
           </div>
-          ${badge}
+          <div class="po-card-top" style="flex:1; margin-bottom:0;">
+            <div>
+              <div class="po-card-id">${order.code}</div>
+              <div class="po-card-supplier">${escapeHtml(order.supplier)}</div>
+              <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong></div>
+              <div class="po-card-meta">Hạn giao: ${fmtDate(order.due_date)} · Tổng: ${fmtMoney(orderTotal(order))} · ${order.items.length} mặt hàng</div>
+            </div>
+            ${badge}
+          </div>
         </div>
-        ${renderRoute(order)}
+        <div style="margin-top:16px;">${renderRoute(order)}</div>
       </article>
     `;
   }).join("");
+}
 
-  list.querySelectorAll(".po-card").forEach(card => {
-    card.addEventListener("click", () => openDetail(card.dataset.id));
-  });
+function renderTableView(filtered) {
+  const rows = filtered.map(order => {
+    const urg = urgency(order);
+    let badge = `<span class="badge neutral">${STATUS_LABEL[order.status]}</span>`;
+    if (urg === "late") badge = `<span class="badge danger">Trễ ${Math.abs(daysUntil(order.due_date))} ngày</span>`;
+    else if (urg === "soon") badge = `<span class="badge warning">Còn ${daysUntil(order.due_date)} ngày</span>`;
+    else if (order.status === "done") badge = `<span class="badge done">Hoàn tất</span>`;
+
+    return `
+      <tr data-id="${order.id}">
+        <td class="col-checkbox"><input type="checkbox" class="row-select" data-id="${order.id}"></td>
+        <td class="col-code">${order.code}</td>
+        <td class="col-supplier">${escapeHtml(order.supplier)}</td>
+        <td>${escapeHtml(order.owner)}</td>
+        <td>${fmtDate(order.due_date)}</td>
+        <td>${fmtMoney(orderTotal(order))}</td>
+        <td>${order.items.length}</td>
+        <td>${badge}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <table class="po-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Mã đơn</th>
+          <th>Nhà cung cấp</th>
+          <th>Phụ trách</th>
+          <th>Hạn giao</th>
+          <th>Tổng giá trị</th>
+          <th>SL mặt hàng</th>
+          <th>Trạng thái</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function updateBulkBar(filtered) {
+  const bar = document.getElementById("bulkBar");
+  const countLabel = document.getElementById("bulkCountLabel");
+  const selectAllCb = document.getElementById("selectAllCheckbox");
+
+  // Bỏ các id không còn hiển thị trong danh sách đã lọc hiện tại khỏi việc tính "chọn tất cả"
+  const visibleIds = filtered.map(o => o.id);
+  const selectedVisibleCount = visibleIds.filter(id => selectedIds.has(id)).length;
+
+  if (selectedIds.size > 0) {
+    bar.hidden = false;
+    countLabel.textContent = `Đã chọn ${selectedIds.size} đơn`;
+  } else {
+    bar.hidden = true;
+  }
+
+  if (visibleIds.length > 0 && selectedVisibleCount === visibleIds.length) {
+    selectAllCb.checked = true; selectAllCb.indeterminate = false;
+  } else if (selectedVisibleCount > 0) {
+    selectAllCb.checked = false; selectAllCb.indeterminate = true;
+  } else {
+    selectAllCb.checked = false; selectAllCb.indeterminate = false;
+  }
+}
+
+function setView(view) {
+  currentView = view;
+  localStorage.setItem("po_tracker_view", view);
+  document.getElementById("btnViewCard").classList.toggle("is-active", view === "card");
+  document.getElementById("btnViewTable").classList.toggle("is-active", view === "table");
+  renderList();
+}
+
+async function bulkApplyStatus() {
+  const newStatus = document.getElementById("bulkStatusSelect").value;
+  if (!newStatus) { showToast("Vui lòng chọn trạng thái muốn áp dụng."); return; }
+  if (selectedIds.size === 0 || !supabase) return;
+
+  try {
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({ status: newStatus })
+      .in("id", [...selectedIds]);
+    if (error) throw error;
+    showToast(`Đã cập nhật trạng thái cho ${selectedIds.size} đơn hàng.`);
+    document.getElementById("bulkStatusSelect").value = "";
+    fetchOrdersFromSupabase();
+  } catch (err) {
+    showToast("Lỗi cập nhật hàng loạt: " + err.message);
+  }
+}
+
+async function bulkDeleteOrders() {
+  if (selectedIds.size === 0 || !supabase) return;
+  if (!confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn ${selectedIds.size} đơn hàng đã chọn?`)) return;
+
+  try {
+    const ids = [...selectedIds];
+    await supabase.from("po_items").delete().in("po_id", ids);
+    const { error } = await supabase.from("purchase_orders").delete().in("id", ids);
+    if (error) throw error;
+    showToast(`Đã xóa ${ids.length} đơn hàng.`);
+    fetchOrdersFromSupabase();
+  } catch (err) {
+    showToast("Lỗi khi xóa hàng loạt: " + err.message);
+  }
 }
 
 /* ========================= NGHIỆP VỤ THAO TÁC CRUD ========================= */
@@ -442,6 +590,284 @@ function simulateZaloNotifications() {
 function openZaloModal() { document.getElementById("zaloModalOverlay").hidden = false; }
 function closeZaloModal() { document.getElementById("zaloModalOverlay").hidden = true; }
 
+/* ========================= QUẢN LÝ NHÀ CUNG CẤP ========================= */
+async function fetchSuppliers() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.from("suppliers").select("*").order("name", { ascending: true });
+    if (error) throw error;
+    suppliers = data || [];
+    buildSupplierDatalist();
+  } catch (err) {
+    console.error("Lỗi tải nhà cung cấp:", err.message);
+  }
+}
+
+function buildSupplierDatalist() {
+  const dl = document.getElementById("supplierDatalist");
+  if (!dl) return;
+  dl.innerHTML = suppliers.map(s => `<option value="${escapeHtml(s.name)}">`).join("");
+}
+
+function supplierStats(supplierName) {
+  const related = orders.filter(o => (o.supplier || "").trim().toLowerCase() === (supplierName || "").trim().toLowerCase());
+  const total = related.reduce((sum, o) => sum + orderTotal(o), 0);
+  return { count: related.length, total, related };
+}
+
+function renderRatingDisplay(rating) {
+  const r = Number(rating) || 0;
+  let out = "";
+  for (let i = 1; i <= 5; i++) out += `<span class="${i <= r ? "" : "empty"}">★</span>`;
+  return `<span class="rating-display">${out}</span>`;
+}
+
+function openSupplierModal() {
+  fetchSuppliers().then(() => renderSupplierList());
+  document.getElementById("supplierFormBox").hidden = true;
+  document.getElementById("supplierSearchInput").value = "";
+  document.getElementById("supplierModalOverlay").hidden = false;
+}
+function closeSupplierModal() { document.getElementById("supplierModalOverlay").hidden = true; }
+
+function renderSupplierList() {
+  const term = document.getElementById("supplierSearchInput").value.trim().toLowerCase();
+  const box = document.getElementById("supplierList");
+  const filtered = suppliers.filter(s => !term || s.name.toLowerCase().includes(term));
+
+  if (filtered.length === 0) {
+    box.innerHTML = `<div class="manage-empty">Chưa có nhà cung cấp nào. Nhấn "+ Thêm nhà cung cấp" để bắt đầu.</div>`;
+    return;
+  }
+
+  box.innerHTML = filtered.map(s => {
+    const stats = supplierStats(s.name);
+    const subParts = [];
+    if (s.contact) subParts.push(escapeHtml(s.contact));
+    if (s.phone) subParts.push(escapeHtml(s.phone));
+    subParts.push(`${stats.count} đơn · ${fmtMoney(stats.total)}`);
+    return `
+      <div class="manage-item" data-id="${s.id}">
+        <div class="manage-item-main">
+          <div class="manage-item-title">${escapeHtml(s.name)}</div>
+          <div class="manage-item-sub">${subParts.join(" · ")}</div>
+        </div>
+        <div class="manage-item-side">${renderRatingDisplay(s.rating)}</div>
+      </div>
+    `;
+  }).join("");
+
+  box.querySelectorAll(".manage-item").forEach(el => {
+    el.addEventListener("click", () => openSupplierForm(el.dataset.id));
+  });
+}
+
+function openSupplierForm(id = null) {
+  editingSupplierId = id;
+  const box = document.getElementById("supplierFormBox");
+  const supplier = id ? suppliers.find(s => s.id === id) : null;
+
+  document.getElementById("supplierId").value = id || "";
+  document.getElementById("supplierName").value = supplier ? supplier.name : "";
+  document.getElementById("supplierContact").value = supplier ? (supplier.contact || "") : "";
+  document.getElementById("supplierPhone").value = supplier ? (supplier.phone || "") : "";
+  document.getElementById("supplierEmail").value = supplier ? (supplier.email || "") : "";
+  document.getElementById("supplierAddress").value = supplier ? (supplier.address || "") : "";
+  document.getElementById("supplierNotes").value = supplier ? (supplier.notes || "") : "";
+  setRatingStars(supplier ? (supplier.rating || 0) : 0);
+  document.getElementById("btnDeleteSupplier").hidden = !id;
+  box.hidden = false;
+}
+
+function setRatingStars(rating) {
+  const wrap = document.getElementById("supplierRatingStars");
+  wrap.dataset.rating = rating;
+  wrap.querySelectorAll("span").forEach(s => {
+    s.classList.toggle("is-filled", Number(s.dataset.star) <= Number(rating));
+  });
+}
+
+async function saveSupplier() {
+  if (!supabase) return;
+  const name = document.getElementById("supplierName").value.trim();
+  if (!name) { showToast("Vui lòng nhập tên nhà cung cấp."); return; }
+
+  const payload = {
+    name,
+    contact: document.getElementById("supplierContact").value.trim(),
+    phone: document.getElementById("supplierPhone").value.trim(),
+    email: document.getElementById("supplierEmail").value.trim(),
+    address: document.getElementById("supplierAddress").value.trim(),
+    rating: Number(document.getElementById("supplierRatingStars").dataset.rating) || 0,
+    notes: document.getElementById("supplierNotes").value.trim()
+  };
+
+  try {
+    if (editingSupplierId) {
+      const { error } = await supabase.from("suppliers").update(payload).eq("id", editingSupplierId);
+      if (error) throw error;
+      showToast("Cập nhật nhà cung cấp thành công!");
+    } else {
+      const { error } = await supabase.from("suppliers").insert([payload]);
+      if (error) throw error;
+      showToast("Đã thêm nhà cung cấp mới!");
+    }
+    document.getElementById("supplierFormBox").hidden = true;
+    await fetchSuppliers();
+    renderSupplierList();
+  } catch (err) {
+    showToast("Lỗi khi lưu nhà cung cấp: " + err.message);
+  }
+}
+
+async function deleteSupplier() {
+  if (!editingSupplierId || !supabase) return;
+  if (!confirm("Xóa nhà cung cấp này khỏi danh mục? (Các đơn hàng cũ vẫn được giữ nguyên)")) return;
+  try {
+    const { error } = await supabase.from("suppliers").delete().eq("id", editingSupplierId);
+    if (error) throw error;
+    showToast("Đã xóa nhà cung cấp.");
+    document.getElementById("supplierFormBox").hidden = true;
+    await fetchSuppliers();
+    renderSupplierList();
+  } catch (err) {
+    showToast("Lỗi khi xóa nhà cung cấp: " + err.message);
+  }
+}
+
+/* ========================= DANH MỤC SẢN PHẨM ========================= */
+async function fetchProducts() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.from("products").select("*").order("name", { ascending: true });
+    if (error) throw error;
+    products = data || [];
+    buildProductDatalist();
+  } catch (err) {
+    console.error("Lỗi tải danh mục sản phẩm:", err.message);
+  }
+}
+
+function buildProductDatalist() {
+  const dl = document.getElementById("productDatalist");
+  if (!dl) return;
+  dl.innerHTML = products.map(p => `<option value="${escapeHtml(p.name)}">`).join("");
+}
+
+function findProductByName(name) {
+  const clean = (name || "").trim().toLowerCase();
+  return products.find(p => p.name.trim().toLowerCase() === clean);
+}
+
+function openProductModal() {
+  fetchProducts().then(() => renderProductList());
+  document.getElementById("productFormBox").hidden = true;
+  document.getElementById("productSearchInput").value = "";
+  document.getElementById("productModalOverlay").hidden = false;
+}
+function closeProductModal() { document.getElementById("productModalOverlay").hidden = true; }
+
+function productStats(productName) {
+  const clean = (productName || "").trim().toLowerCase();
+  let count = 0, totalQty = 0;
+  orders.forEach(o => (o.items || []).forEach(it => {
+    if ((it.name || "").trim().toLowerCase() === clean) { count++; totalQty += Number(it.qty_ordered) || 0; }
+  }));
+  return { count, totalQty };
+}
+
+function renderProductList() {
+  const term = document.getElementById("productSearchInput").value.trim().toLowerCase();
+  const box = document.getElementById("productList");
+  const filtered = products.filter(p => !term || p.name.toLowerCase().includes(term));
+
+  if (filtered.length === 0) {
+    box.innerHTML = `<div class="manage-empty">Chưa có sản phẩm nào trong danh mục. Nhấn "+ Thêm sản phẩm" để bắt đầu.</div>`;
+    return;
+  }
+
+  box.innerHTML = filtered.map(p => {
+    const stats = productStats(p.name);
+    const subParts = [fmtMoney(p.default_price)];
+    if (p.unit) subParts.push(escapeHtml(p.unit));
+    if (p.category) subParts.push(escapeHtml(p.category));
+    subParts.push(`Xuất hiện trong ${stats.count} đơn`);
+    return `
+      <div class="manage-item" data-id="${p.id}">
+        <div class="manage-item-main">
+          <div class="manage-item-title">${escapeHtml(p.name)}</div>
+          <div class="manage-item-sub">${subParts.join(" · ")}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  box.querySelectorAll(".manage-item").forEach(el => {
+    el.addEventListener("click", () => openProductForm(el.dataset.id));
+  });
+}
+
+function openProductForm(id = null) {
+  editingProductId = id;
+  const box = document.getElementById("productFormBox");
+  const product = id ? products.find(p => p.id === id) : null;
+
+  document.getElementById("productId").value = id || "";
+  document.getElementById("productName").value = product ? product.name : "";
+  document.getElementById("productPrice").value = product ? (product.default_price || "") : "";
+  document.getElementById("productUnit").value = product ? (product.unit || "") : "";
+  document.getElementById("productCategory").value = product ? (product.category || "") : "";
+  document.getElementById("productNotes").value = product ? (product.notes || "") : "";
+  document.getElementById("btnDeleteProduct").hidden = !id;
+  box.hidden = false;
+}
+
+async function saveProduct() {
+  if (!supabase) return;
+  const name = document.getElementById("productName").value.trim();
+  if (!name) { showToast("Vui lòng nhập tên sản phẩm."); return; }
+
+  const payload = {
+    name,
+    default_price: parseFloat(document.getElementById("productPrice").value) || 0,
+    unit: document.getElementById("productUnit").value.trim(),
+    category: document.getElementById("productCategory").value.trim(),
+    notes: document.getElementById("productNotes").value.trim()
+  };
+
+  try {
+    if (editingProductId) {
+      const { error } = await supabase.from("products").update(payload).eq("id", editingProductId);
+      if (error) throw error;
+      showToast("Cập nhật sản phẩm thành công!");
+    } else {
+      const { error } = await supabase.from("products").insert([payload]);
+      if (error) throw error;
+      showToast("Đã thêm sản phẩm mới vào danh mục!");
+    }
+    document.getElementById("productFormBox").hidden = true;
+    await fetchProducts();
+    renderProductList();
+  } catch (err) {
+    showToast("Lỗi khi lưu sản phẩm: " + err.message);
+  }
+}
+
+async function deleteProduct() {
+  if (!editingProductId || !supabase) return;
+  if (!confirm("Xóa sản phẩm này khỏi danh mục? (Các đơn hàng cũ vẫn được giữ nguyên)")) return;
+  try {
+    const { error } = await supabase.from("products").delete().eq("id", editingProductId);
+    if (error) throw error;
+    showToast("Đã xóa sản phẩm.");
+    document.getElementById("productFormBox").hidden = true;
+    await fetchProducts();
+    renderProductList();
+  } catch (err) {
+    showToast("Lỗi khi xóa sản phẩm: " + err.message);
+  }
+}
+
 /* ========================= HÀM PHỤ TRỢ ========================= */
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function daysUntil(dateStr) {
@@ -587,7 +1013,7 @@ function addItemRow(it = null) {
   const row = document.createElement("div");
   row.className = "item-form-row";
   row.innerHTML = `
-    <input type="text" class="item-name" required placeholder="Tên sản phẩm..." value="${it ? escapeHtml(it.name) : ''}">
+    <input type="text" class="item-name" required placeholder="Tên sản phẩm..." value="${it ? escapeHtml(it.name) : ''}" list="productDatalist">
     <input type="number" class="item-qty" min="1" required placeholder="SL" value="${it ? it.qty_ordered : '1'}">
     <input type="number" class="item-price" min="0" required placeholder="Giá" value="${it ? it.unit_price : ''}">
     <input type="number" class="item-received" min="0" placeholder="Đã nhận" value="${it ? it.qty_received : '0'}">
@@ -597,6 +1023,15 @@ function addItemRow(it = null) {
     if (container.querySelectorAll(".item-form-row").length > 1) row.remove();
     else showToast("Đơn hàng phải chứa ít nhất một sản phẩm.");
   });
+
+  // Tự động điền đơn giá mặc định khi chọn sản phẩm có trong danh mục
+  const nameInput = row.querySelector(".item-name");
+  const priceInput = row.querySelector(".item-price");
+  nameInput.addEventListener("change", () => {
+    const match = findProductByName(nameInput.value);
+    if (match && !priceInput.value) priceInput.value = match.default_price || "";
+  });
+
   container.appendChild(row);
 }
 
@@ -650,6 +1085,43 @@ function setupEventListeners() {
   document.getElementById("btnCloseZalo").addEventListener("click", closeZaloModal);
   document.getElementById("btnCancelZalo").addEventListener("click", closeZaloModal);
   document.getElementById("btnSaveZalo").addEventListener("click", saveZaloSettings);
+
+  // Chuyển đổi chế độ xem Thẻ / Bảng
+  document.getElementById("btnViewCard").addEventListener("click", () => setView("card"));
+  document.getElementById("btnViewTable").addEventListener("click", () => setView("table"));
+  setView(currentView);
+
+  // Thao tác hàng loạt (bulk actions)
+  document.getElementById("selectAllCheckbox").addEventListener("change", (e) => {
+    const visibleIds = orders.filter(passesFilters).map(o => o.id);
+    if (e.target.checked) visibleIds.forEach(id => selectedIds.add(id));
+    else visibleIds.forEach(id => selectedIds.delete(id));
+    renderList();
+  });
+  document.getElementById("btnBulkApplyStatus").addEventListener("click", bulkApplyStatus);
+  document.getElementById("btnBulkDelete").addEventListener("click", bulkDeleteOrders);
+  document.getElementById("btnBulkClear").addEventListener("click", () => { selectedIds.clear(); renderList(); });
+
+  // Quản lý Nhà cung cấp
+  document.getElementById("btnSuppliers").addEventListener("click", openSupplierModal);
+  document.getElementById("btnCloseSupplier").addEventListener("click", closeSupplierModal);
+  document.getElementById("btnNewSupplier").addEventListener("click", () => openSupplierForm(null));
+  document.getElementById("btnCancelSupplierForm").addEventListener("click", () => document.getElementById("supplierFormBox").hidden = true);
+  document.getElementById("btnSaveSupplier").addEventListener("click", saveSupplier);
+  document.getElementById("btnDeleteSupplier").addEventListener("click", deleteSupplier);
+  document.getElementById("supplierSearchInput").addEventListener("input", renderSupplierList);
+  document.getElementById("supplierRatingStars").querySelectorAll("span").forEach(star => {
+    star.addEventListener("click", () => setRatingStars(star.dataset.star));
+  });
+
+  // Danh mục sản phẩm
+  document.getElementById("btnProducts").addEventListener("click", openProductModal);
+  document.getElementById("btnCloseProduct").addEventListener("click", closeProductModal);
+  document.getElementById("btnNewProduct").addEventListener("click", () => openProductForm(null));
+  document.getElementById("btnCancelProductForm").addEventListener("click", () => document.getElementById("productFormBox").hidden = true);
+  document.getElementById("btnSaveProduct").addEventListener("click", saveProduct);
+  document.getElementById("btnDeleteProduct").addEventListener("click", deleteProduct);
+  document.getElementById("productSearchInput").addEventListener("input", renderProductList);
 
   document.querySelectorAll(".modal-overlay").forEach(overlay => {
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.hidden = true; });
