@@ -342,7 +342,20 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 .manage-item-side{display:flex; align-items:center; gap:14px; flex-shrink:0;}
 .manage-empty{text-align:center; color:var(--slate); font-size:13.5px; padding:24px; border:1px dashed var(--line); border-radius:8px;}
 
-/* Rating stars */
+/* ==========================================================================
+   AUTOCOMPLETE TỰ VIẾT (thay cho <datalist> gốc — bị lệch vị trí do
+   modal-overlay dùng backdrop-filter, là lỗi hiển thị của trình duyệt)
+   ========================================================================== */
+.autocomplete-wrap{position:relative; width:100%;}
+.ac-dropdown{
+  position:fixed; z-index:500; background:var(--paper-card); border:1px solid var(--line);
+  border-radius:8px; box-shadow:var(--shadow-md); max-height:220px; overflow-y:auto;
+  font-size:13.5px;
+}
+.ac-dropdown[hidden]{display:none !important;}
+.ac-dropdown-item{padding:8px 12px; cursor:pointer; color:var(--ink-900); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.ac-dropdown-item:hover, .ac-dropdown-item.is-active{background:#f5f6f4;}
+.ac-dropdown-empty{padding:8px 12px; color:var(--slate); font-style:italic;}
 .rating-stars{display:inline-flex; gap:4px; font-size:22px; line-height:1; cursor:pointer;}
 .rating-stars span{color:var(--line); transition:color .1s ease;}
 .rating-stars span.is-filled{color:var(--amber);}

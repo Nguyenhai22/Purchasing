@@ -204,7 +204,9 @@
           </div>
           <div class="form-field">
             <label>Nhà cung cấp *</label>
-            <input type="text" id="poSupplier" required placeholder="Nhập tên đơn vị bán..." list="supplierDatalist">
+            <div class="autocomplete-wrap">
+              <input type="text" id="poSupplier" required placeholder="Nhập tên đơn vị bán..." autocomplete="off">
+            </div>
           </div>
           <div class="form-field">
             <label>Số điện thoại liên hệ</label>
@@ -414,9 +416,6 @@
     </div>
   </div>
 </div>
-
-<datalist id="supplierDatalist"></datalist>
-<datalist id="productDatalist"></datalist>
 
 <script src="scriptpo.js"></script>
 </body>

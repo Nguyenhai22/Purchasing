@@ -34,6 +34,67 @@ let selectedIds = new Set();
 let editingSupplierId = null;
 let editingProductId = null;
 
+/* ========================= AUTOCOMPLETE TỰ VIẾT ========================= */
+// Thay thế <datalist> gốc: với modal dùng backdrop-filter, hộp gợi ý datalist
+// của trình duyệt (Chrome) bị định vị sai vị trí. Dropdown tự viết dưới đây
+// được gắn vào <body> và định vị bằng getBoundingClientRect nên luôn đúng vị trí.
+const acDropdown = document.createElement("div");
+acDropdown.className = "ac-dropdown";
+acDropdown.hidden = true;
+document.body.appendChild(acDropdown);
+let acCurrentInput = null;
+
+function hideAutocomplete() {
+  acDropdown.hidden = true;
+  acCurrentInput = null;
+}
+
+function positionAutocomplete(input) {
+  const rect = input.getBoundingClientRect();
+  acDropdown.style.left = rect.left + "px";
+  acDropdown.style.top = (rect.bottom + 4) + "px";
+  acDropdown.style.width = rect.width + "px";
+}
+
+function showAutocomplete(input, items, onSelect) {
+  if (!items || items.length === 0) { hideAutocomplete(); return; }
+  acCurrentInput = input;
+  positionAutocomplete(input);
+  acDropdown.innerHTML = items.map(name => `<div class="ac-dropdown-item" data-value="${escapeHtml(name)}">${escapeHtml(name)}</div>`).join("");
+  acDropdown.hidden = false;
+  acDropdown.querySelectorAll(".ac-dropdown-item").forEach(el => {
+    // dùng mousedown (thay vì click) để chạy trước sự kiện blur của input
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      onSelect(el.dataset.value);
+      hideAutocomplete();
+    });
+  });
+}
+
+function attachAutocomplete(input, getItemsFn, onSelectFn) {
+  const runSearch = () => {
+    const term = input.value.trim().toLowerCase();
+    if (!term) { hideAutocomplete(); return; }
+    showAutocomplete(input, getItemsFn(term), (val) => {
+      input.value = val;
+      onSelectFn(val);
+    });
+  };
+  input.addEventListener("input", runSearch);
+  input.addEventListener("focus", runSearch);
+  input.addEventListener("blur", () => {
+    setTimeout(() => { if (acCurrentInput === input) hideAutocomplete(); }, 120);
+  });
+}
+
+window.addEventListener("scroll", () => { if (acCurrentInput) positionAutocomplete(acCurrentInput); }, true);
+window.addEventListener("resize", () => { if (acCurrentInput) hideAutocomplete(); });
+
+function matchSuggestions(list, term, limit = 8) {
+  return list.filter(n => n.toLowerCase().includes(term)).slice(0, limit);
+}
+
 /* ========================= KHỞI CHẠY HỆ THỐNG VÀ AUTH ========================= */
 document.addEventListener("DOMContentLoaded", () => {
   initAuthLogic();
@@ -1035,7 +1096,9 @@ function addItemRow(it = null) {
   const row = document.createElement("div");
   row.className = "item-form-row";
   row.innerHTML = `
-    <input type="text" class="item-name" required placeholder="Tên sản phẩm..." value="${it ? escapeHtml(it.name) : ''}" list="productDatalist">
+    <div class="autocomplete-wrap">
+      <input type="text" class="item-name" required placeholder="Tên sản phẩm..." value="${it ? escapeHtml(it.name) : ''}" autocomplete="off">
+    </div>
     <input type="number" class="item-qty" min="1" required placeholder="SL" value="${it ? it.qty_ordered : '1'}">
     <input type="number" class="item-price" min="0" required placeholder="Giá" value="${it ? it.unit_price : ''}">
     <input type="number" class="item-received" min="0" placeholder="Đã nhận" value="${it ? it.qty_received : '0'}">
@@ -1049,10 +1112,16 @@ function addItemRow(it = null) {
   // Tự động điền đơn giá mặc định khi chọn sản phẩm có trong danh mục
   const nameInput = row.querySelector(".item-name");
   const priceInput = row.querySelector(".item-price");
-  nameInput.addEventListener("change", () => {
-    const match = findProductByName(nameInput.value);
+  const fillPriceIfEmpty = (name) => {
+    const match = findProductByName(name);
     if (match && !priceInput.value) priceInput.value = match.default_price || "";
-  });
+  };
+  attachAutocomplete(
+    nameInput,
+    (term) => matchSuggestions(products.map(p => p.name), term),
+    (val) => fillPriceIfEmpty(val)
+  );
+  nameInput.addEventListener("change", () => fillPriceIfEmpty(nameInput.value));
 
   container.appendChild(row);
 }
@@ -1091,6 +1160,11 @@ function setupEventListeners() {
   });
 
   document.getElementById("btnAddPO").addEventListener("click", openAddModal);
+  attachAutocomplete(
+    document.getElementById("poSupplier"),
+    (term) => matchSuggestions(suppliers.map(s => s.name), term),
+    () => {}
+  );
   document.getElementById("btnCloseModal").addEventListener("click", closeModal);
   document.getElementById("btnCancelModal").addEventListener("click", closeModal);
   document.getElementById("btnSavePO").addEventListener("click", savePO);
