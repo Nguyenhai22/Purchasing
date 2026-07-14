@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="csspo.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -96,6 +97,10 @@
       <button class="btn-settings" id="btnZaloSettings">
         <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:6px;"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
         Cấu hình Zalo
+      </button>
+      <button class="btn-settings" id="btnImportExcel">
+        <svg viewBox="0 0 24 24" width="14" height="14" style="margin-right:6px;"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        Nhập dữ liệu từ Excel
       </button>
 
       <button class="btn-settings" id="btnLogout" style="background: var(--rust-bg); color: var(--rust); border-color: transparent; font-weight: 600;">
@@ -200,7 +205,10 @@
         <div class="form-grid">
           <div class="form-field">
             <label>Mã đơn hàng *</label>
-            <input type="text" id="poCode" required placeholder="Nhập mã đơn (VD: PO-2026-001)...">
+            <div class="autocomplete-wrap">
+              <input type="text" id="poCode" required placeholder="Nhập mã đơn (VD: PO-2026-001)...">
+            </div>
+            <small id="poCodeExcelHint" class="field-hint" hidden>💡 Gõ mã đơn có trong file Excel đã nhập để tự động điền toàn bộ dữ liệu.</small>
           </div>
           <div class="form-field">
             <label>Nhà cung cấp *</label>
@@ -215,6 +223,12 @@
           <div class="form-field">
             <label>Người phụ trách *</label>
             <input type="text" id="poOwner" required placeholder="Tên người quản lý đơn...">
+          </div>
+          <div class="form-field">
+            <label>PIC Mua Hàng</label>
+            <div class="autocomplete-wrap">
+              <input type="text" id="poPicMuaHang" placeholder="Tên nhân viên phụ trách mua hàng..." autocomplete="off">
+            </div>
           </div>
           <div class="form-field">
             <label>Ngày đặt hàng *</label>
@@ -235,8 +249,10 @@
         </div>
         <div class="items-table-header">
           <span>Tên sản phẩm *</span>
+          <span>ĐVT</span>
           <span>Số lượng *</span>
           <span>Đơn giá *</span>
+          <span>%VAT</span>
           <span>Đã nhận</span>
           <span></span>
         </div>
@@ -413,6 +429,59 @@
       </div>
 
       <div class="manage-list" id="productList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="importModalOverlay" hidden>
+  <div class="modal" style="max-width: 780px;">
+    <div class="modal-head">
+      <h2>Nhập dữ liệu từ Excel</h2>
+      <button class="modal-close" id="btnCloseImport">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px; color:var(--slate); background:var(--amber-bg); padding:10px; border-radius:6px; margin-bottom:16px;">
+        Chọn file <strong>RFQ-MASTER-PUR.xlsb</strong> (hoặc .xlsx). Hệ thống sẽ đọc sheet <strong>2.PO_Manager_PUR</strong>,
+        gom dữ liệu theo <strong>Số ĐMH</strong> và lấy cột <strong>PIC Mua hàng</strong> tự động điền cho từng đơn.
+      </p>
+
+      <div class="form-field">
+        <label>Chọn file dữ liệu</label>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.xlsb">
+      </div>
+
+      <div id="importAfterParse" hidden>
+        <div class="import-pic-block">
+          <label style="font-weight:600; font-size:12px; display:block; margin-bottom:8px;">Chọn PIC Mua Hàng cần nhập</label>
+          <div class="import-pic-toolbar">
+            <input type="text" id="importPicSearch" placeholder="Tìm tên PIC...">
+            <button type="button" class="btn-ghost-sm" id="btnImportPicAll">Chọn tất cả</button>
+            <button type="button" class="btn-ghost-sm" id="btnImportPicNone">Bỏ chọn hết</button>
+          </div>
+          <div class="import-pic-list" id="importPicList"></div>
+        </div>
+
+        <div class="import-status-block" style="margin-top:16px;">
+          <label style="font-weight:600; font-size:12px; display:block; margin-bottom:8px;">Lọc theo trạng thái mua hàng</label>
+          <div class="import-status-list" id="importStatusList"></div>
+        </div>
+
+        <div class="import-summary" id="importSummary"></div>
+
+        <label class="import-status-item" style="margin-top:10px; max-width:max-content;">
+          <input type="checkbox" id="importUpdateExisting" checked>
+          Tự động cập nhật đơn đã tồn tại theo dữ liệu Excel (không cần sửa tay từng đơn)
+        </label>
+
+        <div class="manage-list" id="importPreviewList" style="max-height:280px; overflow-y:auto; margin-top:12px;"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span id="importProgressLabel" style="font-size:12px; color:var(--slate);"></span>
+      <div style="display:flex; gap:10px; margin-left:auto;">
+        <button class="btn-ghost" id="btnCancelImport">Đóng</button>
+        <button class="btn-primary" id="btnRunImport" disabled>Nhập vào hệ thống</button>
+      </div>
     </div>
   </div>
 </div>

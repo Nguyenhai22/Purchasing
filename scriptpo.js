@@ -34,6 +34,397 @@ let selectedIds = new Set();
 let editingSupplierId = null;
 let editingProductId = null;
 
+/* ========================= NHẬP DỮ LIỆU TỪ EXCEL (RFQ-MASTER-PUR) ========================= */
+// excelPoGroups: { [maDon]: { code, supplier, contact, owner, pic_mua_hang, order_date, due_date, notes, status, excel_status, items:[] } }
+let excelPoGroups = {};
+let excelGroupCount = 0;
+
+const EXCEL_SHEET_NAME = "2.PO_Manager_PUR";
+const EXCEL_HEADER_ROW_INDEX = 0; // Dòng 1: tên cột kỹ thuật (Dmh_So, Ncc_Ten, Pic_MuaHang...)
+const EXCEL_DATA_START_INDEX = 4; // Dữ liệu thật bắt đầu từ dòng 5 (bỏ 3 dòng tiêu đề nhóm/mẫu)
+
+// Trạng thái mua hàng trong file Excel -> trạng thái luồng xử lý của ứng dụng.
+// Ứng dụng hiện không có trạng thái "Đã hủy" riêng nên đơn Canceled được nhập
+// với trạng thái "ordered" và ghi rõ trong Ghi chú để không mất thông tin gốc.
+const EXCEL_STATUS_LIST = ["Canceled", "Completed", "Invoiced", "Pending", "Processing", "Stock"];
+const EXCEL_STATUS_LABEL_VI = {
+  Canceled: "Đã hủy", Completed: "Hoàn thành", Invoiced: "Đã xuất hóa đơn",
+  Pending: "Chờ xử lý", Processing: "Đang xử lý", Stock: "Đã nhập kho"
+};
+const EXCEL_STATUS_TO_APP = {
+  Pending: "ordered", Processing: "producing", Stock: "received",
+  Invoiced: "done", Completed: "done", Canceled: "ordered"
+};
+
+// Excel lưu ngày dưới dạng số serial (số ngày kể từ 1899-12-30)
+function excelSerialToISO(serial) {
+  if (serial === null || serial === undefined || serial === "" || isNaN(serial)) return null;
+  const utcDays = Math.floor(Number(serial) - 25569);
+  const utcValue = utcDays * 86400;
+  const d = new Date(utcValue * 1000);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function cleanExcelText(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v).trim();
+  return s;
+}
+
+function readExcelFileAsWorkbook(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        resolve(wb);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error("Không thể đọc file."));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Gom các dòng chi tiết (mỗi dòng = 1 mặt hàng) trong sheet 2.PO_Manager_PUR
+// thành các đơn mua hàng theo "Số ĐMH" (Dmh_So).
+function buildExcelGroupsFromWorkbook(wb) {
+  const sheet = wb.Sheets[EXCEL_SHEET_NAME];
+  if (!sheet) throw new Error(`Không tìm thấy sheet "${EXCEL_SHEET_NAME}" trong file.`);
+
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+  const headers = rows[EXCEL_HEADER_ROW_INDEX];
+  const idx = {};
+  headers.forEach((h, i) => { if (h) idx[h] = i; });
+
+  const required = ["DonHang_So", "Ncc_Ten", "TenHang_Mua", "Pic_MuaHang", "TrangThai_Mua"];
+  for (const key of required) {
+    if (!(key in idx)) throw new Error(`Thiếu cột "${key}" trong sheet — kiểm tra lại file/tên sheet.`);
+  }
+
+  const groups = {};
+  for (let r = EXCEL_DATA_START_INDEX; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const donHangSo = row[idx.DonHang_So];
+    if (!donHangSo) continue; // dòng trống / dòng công thức chưa có dữ liệu
+
+    // Mã đơn hàng lấy đúng từ cột "Số PO (*)" (DonHang_So) theo yêu cầu.
+    const code = cleanExcelText(donHangSo);
+
+    const itemName = cleanExcelText(row[idx.TenHang_Mua]) || cleanExcelText(row[idx.TenHang_Ban]);
+    const qty = Number(row[idx.SoLuong_Mua]) || Number(row[idx.SoLuong_Ban]) || 0;
+    const price = Number(row[idx.DonGia_Mua_ChuaVat]) || 0;
+    const received = Number(row[idx.SoLuong_NhapKho]) || 0;
+    const status = cleanExcelText(row[idx.TrangThai_Mua]) || "Pending";
+    // Đơn vị tính (DVT): ưu tiên cột riêng cho hàng mua, dự phòng các cột DVT khác
+    const unit = cleanExcelText(row[idx.Dvt_Mua]) || cleanExcelText(row[idx.Dvt]) || cleanExcelText(row[idx.Dvt_Ban]);
+    // %VAT: cột lưu dạng số thập phân (0.08 = 8%) -> quy đổi ra phần trăm để hiển thị
+    const vatRaw = (row[idx.ThueVat_Mua] !== null && row[idx.ThueVat_Mua] !== undefined) ? row[idx.ThueVat_Mua] : row[idx.ThueVat_Ban];
+    const vatPercent = vatRaw ? Math.round(Number(vatRaw) * 10000) / 100 : 0;
+
+    if (!groups[code]) {
+      groups[code] = {
+        code,
+        supplier: cleanExcelText(row[idx.Ncc_Ten]) || "Chưa rõ nhà cung cấp",
+        contact: cleanExcelText(row[idx.Ncc_Ma]),
+        owner: cleanExcelText(row[idx.Pic_BanHang]) || cleanExcelText(row[idx.Pic_MuaHang]) || "Chưa rõ",
+        pic_mua_hang: cleanExcelText(row[idx.Pic_MuaHang]),
+        // "Ngày" và "Ngày giao" là 2 cột đi liền với "Số PO (*)" trong cùng nhóm dữ liệu đơn hàng.
+        order_date: excelSerialToISO(row[idx.DonHang_Ngay]) || excelSerialToISO(row[idx.Dmh_Ngay]) || todayISO(),
+        due_date: excelSerialToISO(row[idx.ThoiHan_GiaoHang_Ban]) || excelSerialToISO(row[idx.ThoiHan_GiaoHang_Mua]) || excelSerialToISO(row[idx.Dbh_GiaoHang_Ngay]) || todayISO(),
+        notes: status === "Canceled" ? "[Nhập từ Excel] Đơn đã bị hủy theo dữ liệu gốc." : "[Nhập từ Excel]",
+        excel_status: status,
+        status: EXCEL_STATUS_TO_APP[status] || "ordered",
+        items: []
+      };
+    }
+    if (itemName) {
+      groups[code].items.push({
+        name: itemName, unit: unit || "", qty_ordered: Math.max(qty, 1),
+        unit_price: Math.max(price, 0), vat_percent: vatPercent, qty_received: Math.max(received, 0)
+      });
+    }
+    // Nếu dòng sau có PIC Mua hàng mà nhóm chưa có, bổ sung
+    if (!groups[code].pic_mua_hang && row[idx.Pic_MuaHang]) {
+      groups[code].pic_mua_hang = cleanExcelText(row[idx.Pic_MuaHang]);
+    }
+  }
+
+  return groups;
+}
+
+function renderImportPicCheckboxes() {
+  const box = document.getElementById("importPicList");
+  const counts = {};
+  Object.values(excelPoGroups).forEach(g => {
+    const pic = g.pic_mua_hang || "(Chưa có PIC)";
+    counts[pic] = (counts[pic] || 0) + 1;
+  });
+  const picNames = Object.keys(counts).sort((a, b) => a.localeCompare(b, "vi"));
+
+  box.innerHTML = picNames.map(pic => `
+    <label class="import-pic-item" data-name="${escapeHtml(pic.toLowerCase())}">
+      <input type="checkbox" class="import-pic-cb" value="${escapeHtml(pic)}" checked>
+      ${escapeHtml(pic)} (${counts[pic]})
+    </label>
+  `).join("");
+
+  box.querySelectorAll(".import-pic-cb").forEach(cb => cb.addEventListener("change", () => {
+    refreshStatusCountsForSelectedPics();
+    updateImportPreview();
+  }));
+}
+
+function getCheckedExcelPics() {
+  return new Set([...document.querySelectorAll(".import-pic-cb:checked")].map(cb => cb.value));
+}
+
+// Bộ lọc trạng thái đứng SAU bộ lọc PIC: số lượng hiển thị bên cạnh mỗi trạng thái
+// luôn tính lại theo các PIC đang được chọn (không phải theo toàn bộ file).
+function renderImportStatusCheckboxes() {
+  const box = document.getElementById("importStatusList");
+
+  box.innerHTML = `
+    <label class="import-status-item"><input type="checkbox" id="importStatusAll" checked> <strong>(Chọn tất cả)</strong></label>
+    ${EXCEL_STATUS_LIST.map(st => `
+      <label class="import-status-item">
+        <input type="checkbox" class="import-status-cb" value="${st}" checked>
+        ${EXCEL_STATUS_LABEL_VI[st] || st} (<span class="import-status-count" data-status="${st}">0</span>)
+      </label>
+    `).join("")}
+  `;
+
+  document.getElementById("importStatusAll").addEventListener("change", (e) => {
+    box.querySelectorAll(".import-status-cb").forEach(cb => cb.checked = e.target.checked);
+    updateImportPreview();
+  });
+  box.querySelectorAll(".import-status-cb").forEach(cb => cb.addEventListener("change", updateImportPreview));
+
+  refreshStatusCountsForSelectedPics();
+}
+
+// Tính lại số đơn theo từng trạng thái, chỉ trong phạm vi các PIC đang được tick,
+// mà KHÔNG reset trạng thái tick/bỏ tick hiện có của các ô trạng thái.
+function refreshStatusCountsForSelectedPics() {
+  const checkedPics = getCheckedExcelPics();
+  const counts = {};
+  Object.values(excelPoGroups).forEach(g => {
+    const pic = g.pic_mua_hang || "(Chưa có PIC)";
+    if (!checkedPics.has(pic)) return;
+    counts[g.excel_status] = (counts[g.excel_status] || 0) + 1;
+  });
+  document.querySelectorAll(".import-status-count").forEach(el => {
+    el.textContent = counts[el.dataset.status] || 0;
+  });
+}
+
+function getCheckedExcelStatuses() {
+  return [...document.querySelectorAll(".import-status-cb:checked")].map(cb => cb.value);
+}
+
+function getFilteredExcelGroups() {
+  const checkedStatuses = new Set(getCheckedExcelStatuses());
+  const checkedPics = getCheckedExcelPics();
+  return Object.values(excelPoGroups).filter(g => {
+    const pic = g.pic_mua_hang || "(Chưa có PIC)";
+    return checkedStatuses.has(g.excel_status) && checkedPics.has(pic);
+  });
+}
+
+function shouldUpdateExisting() {
+  const cb = document.getElementById("importUpdateExisting");
+  return cb ? cb.checked : true;
+}
+
+function updateImportPreview() {
+  const filtered = getFilteredExcelGroups();
+  const existingCodes = new Set(orders.map(o => o.code));
+  const newOnes = filtered.filter(g => !existingCodes.has(g.code));
+  const existingOnes = filtered.filter(g => existingCodes.has(g.code));
+  const updateMode = shouldUpdateExisting();
+
+  document.getElementById("importSummary").innerHTML = `
+    <span>Tổng đơn khớp bộ lọc: <strong>${filtered.length}</strong></span>
+    <span>Đơn mới sẽ nhập: <strong>${newOnes.length}</strong></span>
+    <span>Đơn đã tồn tại (${updateMode ? "sẽ cập nhật" : "bỏ qua"}): <strong>${existingOnes.length}</strong></span>
+  `;
+
+  const preview = filtered.slice(0, 60);
+  document.getElementById("importPreviewList").innerHTML = `
+    <div class="import-preview-row head"><span>Mã ĐMH</span><span>Nhà cung cấp</span><span>PIC Mua Hàng</span><span>Trạng thái</span><span>SL SP</span></div>
+    ${preview.map(g => `
+      <div class="import-preview-row">
+        <span title="${escapeHtml(g.code)}">${escapeHtml(g.code)}${existingCodes.has(g.code) ? ` <span style="color:var(--amber);">•${updateMode ? " cập nhật" : " bỏ qua"}</span>` : ""}</span>
+        <span title="${escapeHtml(g.supplier)}">${escapeHtml(g.supplier)}</span>
+        <span title="${escapeHtml(g.pic_mua_hang)}">${escapeHtml(g.pic_mua_hang || "—")}</span>
+        <span>${EXCEL_STATUS_LABEL_VI[g.excel_status] || g.excel_status}</span>
+        <span>${g.items.length}</span>
+      </div>
+    `).join("")}
+    ${filtered.length > 60 ? `<div style="padding:8px 10px; font-size:12px; color:var(--slate);">…và ${filtered.length - 60} đơn khác không hiển thị (vẫn sẽ được xử lý).</div>` : ""}
+  `;
+
+  const totalToProcess = newOnes.length + (updateMode ? existingOnes.length : 0);
+  document.getElementById("btnRunImport").disabled = totalToProcess === 0;
+}
+
+async function handleExcelFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!supabase) { showToast("Chưa kết nối được máy chủ dữ liệu."); return; }
+  if (typeof XLSX === "undefined") { showToast("Chưa tải được thư viện đọc Excel."); return; }
+
+  document.getElementById("importProgressLabel").textContent = "Đang đọc file...";
+  try {
+    const wb = await readExcelFileAsWorkbook(file);
+    excelPoGroups = buildExcelGroupsFromWorkbook(wb);
+    excelGroupCount = Object.keys(excelPoGroups).length;
+
+    document.getElementById("importAfterParse").hidden = false;
+    document.getElementById("importProgressLabel").textContent = `Đã đọc ${excelGroupCount} đơn mua hàng từ file.`;
+    renderImportPicCheckboxes();
+    renderImportStatusCheckboxes();
+    updateImportPreview();
+    document.getElementById("poCodeExcelHint").hidden = false;
+  } catch (err) {
+    document.getElementById("importProgressLabel").textContent = "";
+    showToast("Lỗi đọc file Excel: " + err.message);
+  }
+}
+
+async function runExcelImport() {
+  if (!supabase) return;
+  const filtered = getFilteredExcelGroups();
+  const existingCodes = new Set(orders.map(o => o.code));
+  const existingIdByCode = new Map(orders.map(o => [o.code, o.id]));
+  const updateMode = shouldUpdateExisting();
+
+  const toInsert = filtered.filter(g => !existingCodes.has(g.code));
+  const toUpdate = updateMode ? filtered.filter(g => existingCodes.has(g.code)) : [];
+  const totalCount = toInsert.length + toUpdate.length;
+
+  if (totalCount === 0) { showToast("Không có đơn nào để xử lý theo bộ lọc hiện tại."); return; }
+
+  const btn = document.getElementById("btnRunImport");
+  btn.disabled = true;
+  let done = 0, inserted = 0, updated = 0;
+  const failures = []; // { code, stage: 'don'|'san_pham', message }
+
+  for (const g of toInsert) {
+    document.getElementById("importProgressLabel").textContent = `Đang nhập ${done + 1}/${totalCount}: ${g.code}`;
+    try {
+      const { data: newPo, error: poError } = await supabase
+        .from("purchase_orders")
+        .insert([{
+          code: g.code, supplier: g.supplier, contact: g.contact, owner: g.owner,
+          pic_mua_hang: g.pic_mua_hang, order_date: g.order_date, due_date: g.due_date,
+          notes: g.notes, status: g.status
+        }])
+        .select()
+        .single();
+
+      if (poError) throw poError;
+
+      if (g.items.length > 0) {
+        const finalItems = g.items.map(it => ({ ...it, po_id: newPo.id }));
+        const { error: itemsError } = await supabase.from("po_items").insert(finalItems);
+        if (itemsError) {
+          failures.push({ code: g.code, stage: "san_pham", message: itemsError.message });
+        }
+      }
+      inserted++;
+    } catch (err) {
+      failures.push({ code: g.code, stage: "don", message: err.message });
+      console.error("Lỗi nhập đơn " + g.code, err);
+    }
+    done++;
+  }
+
+  // Cập nhật lại các đơn đã tồn tại theo đúng PIC/trạng thái đang lọc, không cần sửa tay từng đơn.
+  for (const g of toUpdate) {
+    document.getElementById("importProgressLabel").textContent = `Đang cập nhật ${done + 1}/${totalCount}: ${g.code}`;
+    const poId = existingIdByCode.get(g.code);
+    try {
+      const { error: poError } = await supabase
+        .from("purchase_orders")
+        .update({
+          supplier: g.supplier, contact: g.contact, owner: g.owner,
+          pic_mua_hang: g.pic_mua_hang, order_date: g.order_date, due_date: g.due_date,
+          notes: g.notes, status: g.status
+        })
+        .eq("id", poId);
+
+      if (poError) throw poError;
+
+      const { error: delError } = await supabase.from("po_items").delete().eq("po_id", poId);
+      if (delError) throw delError;
+
+      if (g.items.length > 0) {
+        const finalItems = g.items.map(it => ({ ...it, po_id: poId }));
+        const { error: itemsError } = await supabase.from("po_items").insert(finalItems);
+        if (itemsError) {
+          failures.push({ code: g.code, stage: "san_pham", message: itemsError.message });
+        }
+      }
+      updated++;
+    } catch (err) {
+      failures.push({ code: g.code, stage: "don", message: err.message });
+      console.error("Lỗi cập nhật đơn " + g.code, err);
+    }
+    done++;
+  }
+
+  const itemFailCount = failures.filter(f => f.stage === "san_pham").length;
+  const orderFailCount = failures.filter(f => f.stage === "don").length;
+
+  if (failures.length === 0) {
+    document.getElementById("importProgressLabel").textContent = `Hoàn tất: nhập mới ${inserted}, cập nhật ${updated}.`;
+    showToast(`Đã nhập mới ${inserted} đơn và cập nhật ${updated} đơn từ Excel.`);
+  } else {
+    const firstMsg = failures[0].message;
+    document.getElementById("importProgressLabel").textContent =
+      `Hoàn tất với lỗi: nhập mới ${inserted}, cập nhật ${updated}, LỖI ${failures.length} (${itemFailCount} đơn thiếu sản phẩm, ${orderFailCount} đơn không lưu được).`;
+    showToast(`⚠️ Có ${failures.length} lỗi khi nhập (${itemFailCount} đơn bị thiếu sản phẩm). Lỗi đầu tiên: ${firstMsg}`);
+    console.error("Chi tiết các đơn lỗi khi nhập Excel:", failures);
+  }
+
+  btn.disabled = false;
+  fetchOrdersFromSupabase();
+  updateImportPreview();
+}
+
+function openImportModal() {
+  document.getElementById("importAfterParse").hidden = true;
+  document.getElementById("excelFileInput").value = "";
+  document.getElementById("importProgressLabel").textContent = "";
+  document.getElementById("btnRunImport").disabled = true;
+  document.getElementById("importModalOverlay").hidden = false;
+}
+function closeImportModal() { document.getElementById("importModalOverlay").hidden = true; }
+
+// Tự động điền toàn bộ dữ liệu đơn (NCC, ngày, PIC, sản phẩm...) khi chọn
+// một mã đơn có sẵn trong dữ liệu Excel đã nhập.
+function fillFormFromExcelGroup(code) {
+  const g = excelPoGroups[code];
+  if (!g) return;
+  document.getElementById("poSupplier").value = g.supplier;
+  document.getElementById("poContact").value = g.contact || "";
+  document.getElementById("poOwner").value = g.owner;
+  document.getElementById("poPicMuaHang").value = g.pic_mua_hang || "";
+  document.getElementById("poOrderDate").value = g.order_date;
+  document.getElementById("poDueDate").value = g.due_date;
+  document.getElementById("poNotes").value = g.notes || "";
+
+  const container = document.getElementById("itemsContainer");
+  container.innerHTML = "";
+  if (g.items.length === 0) addItemRow();
+  else g.items.forEach(it => addItemRow(it));
+
+  showToast(`Đã tự động điền dữ liệu đơn ${code} từ Excel.`);
+}
+
 /* ========================= AUTOCOMPLETE TỰ VIẾT ========================= */
 // Thay thế <datalist> gốc: với modal dùng backdrop-filter, hộp gợi ý datalist
 // của trình duyệt (Chrome) bị định vị sai vị trí. Dropdown tự viết dưới đây
@@ -356,7 +747,7 @@ function renderCardView(filtered) {
             <div>
               <div class="po-card-id">${order.code}</div>
               <div class="po-card-supplier">${escapeHtml(order.supplier)}${itemsSummary ? `<span class="po-card-items"> -- ${escapeHtml(itemsSummary)}</span>` : ""}</div>
-              <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong></div>
+              <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong>${order.pic_mua_hang ? ` · PIC mua: <strong>${escapeHtml(order.pic_mua_hang)}</strong>` : ""}</div>
               <div class="po-card-meta">Hạn giao: ${fmtDate(order.due_date)} · Tổng: ${fmtMoney(orderTotal(order))} · ${order.items.length} mặt hàng</div>
             </div>
             ${badge}
@@ -382,6 +773,7 @@ function renderTableView(filtered) {
         <td class="col-code">${order.code}</td>
         <td class="col-supplier">${escapeHtml(order.supplier)}</td>
         <td>${escapeHtml(order.owner)}</td>
+        <td>${escapeHtml(order.pic_mua_hang || "—")}</td>
         <td>${fmtDate(order.due_date)}</td>
         <td>${fmtMoney(orderTotal(order))}</td>
         <td>${order.items.length}</td>
@@ -398,6 +790,7 @@ function renderTableView(filtered) {
           <th>Mã đơn</th>
           <th>Nhà cung cấp</th>
           <th>Phụ trách</th>
+          <th>PIC Mua Hàng</th>
           <th>Hạn giao</th>
           <th>Tổng giá trị</th>
           <th>SL mặt hàng</th>
@@ -485,6 +878,7 @@ async function savePO() {
   const code = document.getElementById("poCode").value.trim();
   const supplier = document.getElementById("poSupplier").value.trim();
   const owner = document.getElementById("poOwner").value.trim();
+  const picMuaHang = document.getElementById("poPicMuaHang").value.trim();
   const orderDate = document.getElementById("poOrderDate").value;
   const dueDate = document.getElementById("poDueDate").value;
   const contact = document.getElementById("poContact").value.trim();
@@ -499,15 +893,17 @@ async function savePO() {
   const itemsData = [];
   for (let row of rows) {
     const name = row.querySelector(".item-name").value.trim();
+    const unit = row.querySelector(".item-unit").value.trim();
     const qtyOrdered = parseInt(row.querySelector(".item-qty").value) || 0;
     const unitPrice = parseFloat(row.querySelector(".item-price").value) || 0;
+    const vatPercent = parseFloat(row.querySelector(".item-vat").value) || 0;
     const qtyReceived = parseInt(row.querySelector(".item-received").value) || 0;
 
     if (!name || qtyOrdered <= 0 || unitPrice <= 0) {
       showToast("Dữ liệu danh sách sản phẩm chưa hợp lệ.");
       return;
     }
-    itemsData.push({ name, qty_ordered: qtyOrdered, unit_price: unitPrice, qty_received: qtyReceived });
+    itemsData.push({ name, unit, qty_ordered: qtyOrdered, unit_price: unitPrice, vat_percent: vatPercent, qty_received: qtyReceived });
   }
 
   try {
@@ -515,7 +911,7 @@ async function savePO() {
       // Cập nhật đơn
       const { error: poError } = await supabase
         .from("purchase_orders")
-        .update({ supplier, contact, owner, order_date: orderDate, due_date: dueDate, notes })
+        .update({ supplier, contact, owner, pic_mua_hang: picMuaHang, order_date: orderDate, due_date: dueDate, notes })
         .eq("id", editingId);
 
       if (poError) throw poError;
@@ -541,7 +937,7 @@ async function savePO() {
 
       const { data: newPo, error: poError } = await supabase
         .from("purchase_orders")
-        .insert([{ code, supplier, contact, owner, order_date: orderDate, due_date: dueDate, notes, status: "ordered" }])
+        .insert([{ code, supplier, contact, owner, pic_mua_hang: picMuaHang, order_date: orderDate, due_date: dueDate, notes, status: "ordered" }])
         .select()
         .single();
 
@@ -1020,14 +1416,15 @@ function openDetail(id) {
       <div><span>Nhà cung cấp</span>${escapeHtml(order.supplier)}</div>
       <div><span>Liên hệ</span>${escapeHtml(order.contact || "—")}</div>
       <div><span>Người phụ trách</span>${escapeHtml(order.owner || "—")}</div>
+      <div><span>PIC Mua Hàng</span>${escapeHtml(order.pic_mua_hang || "—")}</div>
       <div><span>Ngày đặt hàng</span>${fmtDate(order.order_date)}</div>
       <div><span>Ngày giao dự kiến</span>${fmtDate(order.due_date)} ${urgencyNote}</div>
       <div><span>Tổng giá trị đơn</span>${fmtMoney(orderTotal(order))}</div>
     </div>
     <div class="detail-route-wrap">${renderRoute(order)}</div>
     <div class="detail-items">
-      <div class="detail-item-row head"><span>Sản phẩm</span><span>SL đặt</span><span>Đơn giá</span><span>Thực nhận</span></div>
-      ${order.items.map(it => `<div class="detail-item-row"><span>${escapeHtml(it.name)}</span><span>${it.qty_ordered}</span><span>${fmtMoney(it.unit_price)}</span><span>${it.qty_received} / ${it.qty_ordered}</span></div>`).join("")}
+      <div class="detail-item-row head"><span>Sản phẩm</span><span>ĐVT</span><span>SL đặt</span><span>Đơn giá</span><span>%VAT</span><span>Thực nhận</span></div>
+      ${order.items.map(it => `<div class="detail-item-row"><span>${escapeHtml(it.name)}</span><span>${escapeHtml(it.unit || "—")}</span><span>${it.qty_ordered}</span><span>${fmtMoney(it.unit_price)}</span><span>${it.vat_percent ? it.vat_percent + "%" : "—"}</span><span>${it.qty_received} / ${it.qty_ordered}</span></div>`).join("")}
     </div>
     ${order.notes ? `<div class="detail-notes">${escapeHtml(order.notes)}</div>` : ""}
   `;
@@ -1058,6 +1455,7 @@ function openAddModal() {
   document.getElementById("itemsContainer").innerHTML = "";
   document.getElementById("modalTitle").textContent = "Thêm đơn mua hàng";
   document.getElementById("btnDeletePO").hidden = true;
+  document.getElementById("poCodeExcelHint").hidden = excelGroupCount === 0;
   addItemRow();
   document.getElementById("poModalOverlay").hidden = false;
 }
@@ -1077,9 +1475,11 @@ function openEditModal(id) {
   document.getElementById("poSupplier").value = order.supplier;
   document.getElementById("poContact").value = order.contact || "";
   document.getElementById("poOwner").value = order.owner;
+  document.getElementById("poPicMuaHang").value = order.pic_mua_hang || "";
   document.getElementById("poOrderDate").value = order.order_date;
   document.getElementById("poDueDate").value = order.due_date;
   document.getElementById("poNotes").value = order.notes || "";
+  document.getElementById("poCodeExcelHint").hidden = true;
 
   const container = document.getElementById("itemsContainer");
   container.innerHTML = "";
@@ -1099,8 +1499,10 @@ function addItemRow(it = null) {
     <div class="autocomplete-wrap">
       <input type="text" class="item-name" required placeholder="Tên sản phẩm..." value="${it ? escapeHtml(it.name) : ''}" autocomplete="off">
     </div>
+    <input type="text" class="item-unit" placeholder="ĐVT" value="${it && it.unit ? escapeHtml(it.unit) : ''}">
     <input type="number" class="item-qty" min="1" required placeholder="SL" value="${it ? it.qty_ordered : '1'}">
     <input type="number" class="item-price" min="0" required placeholder="Giá" value="${it ? it.unit_price : ''}">
+    <input type="number" class="item-vat" min="0" max="100" step="0.1" placeholder="%VAT" value="${it && it.vat_percent ? it.vat_percent : ''}">
     <input type="number" class="item-received" min="0" placeholder="Đã nhận" value="${it ? it.qty_received : '0'}">
     <button type="button" class="btn-text btn-del-item" style="padding:4px; font-weight:bold; font-size:16px;">&times;</button>
   `;
@@ -1165,6 +1567,20 @@ function setupEventListeners() {
     (term) => matchSuggestions(suppliers.map(s => s.name), term),
     () => {}
   );
+  attachAutocomplete(
+    document.getElementById("poCode"),
+    (term) => matchSuggestions(Object.keys(excelPoGroups), term),
+    (val) => fillFormFromExcelGroup(val)
+  );
+  attachAutocomplete(
+    document.getElementById("poPicMuaHang"),
+    (term) => {
+      const fromOrders = orders.map(o => o.pic_mua_hang).filter(Boolean);
+      const fromExcel = Object.values(excelPoGroups).map(g => g.pic_mua_hang).filter(Boolean);
+      return matchSuggestions([...new Set([...fromOrders, ...fromExcel])], term);
+    },
+    () => {}
+  );
   document.getElementById("btnCloseModal").addEventListener("click", closeModal);
   document.getElementById("btnCancelModal").addEventListener("click", closeModal);
   document.getElementById("btnSavePO").addEventListener("click", savePO);
@@ -1181,6 +1597,29 @@ function setupEventListeners() {
   document.getElementById("btnCloseZalo").addEventListener("click", closeZaloModal);
   document.getElementById("btnCancelZalo").addEventListener("click", closeZaloModal);
   document.getElementById("btnSaveZalo").addEventListener("click", saveZaloSettings);
+
+  document.getElementById("btnImportExcel").addEventListener("click", openImportModal);
+  document.getElementById("btnCloseImport").addEventListener("click", closeImportModal);
+  document.getElementById("btnCancelImport").addEventListener("click", closeImportModal);
+  document.getElementById("excelFileInput").addEventListener("change", handleExcelFileSelected);
+  document.getElementById("btnRunImport").addEventListener("click", runExcelImport);
+  document.getElementById("importPicSearch").addEventListener("input", (e) => {
+    const term = e.target.value.trim().toLowerCase();
+    document.querySelectorAll("#importPicList .import-pic-item").forEach(el => {
+      el.classList.toggle("is-hidden", term && !el.dataset.name.includes(term));
+    });
+  });
+  document.getElementById("btnImportPicAll").addEventListener("click", () => {
+    document.querySelectorAll(".import-pic-cb").forEach(cb => cb.checked = true);
+    refreshStatusCountsForSelectedPics();
+    updateImportPreview();
+  });
+  document.getElementById("btnImportPicNone").addEventListener("click", () => {
+    document.querySelectorAll(".import-pic-cb").forEach(cb => cb.checked = false);
+    refreshStatusCountsForSelectedPics();
+    updateImportPreview();
+  });
+  document.getElementById("importUpdateExisting").addEventListener("change", updateImportPreview);
 
   // Chuyển đổi chế độ xem Thẻ / Bảng
   document.getElementById("btnViewCard").addEventListener("click", () => setView("card"));
