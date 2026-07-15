@@ -35,10 +35,10 @@
 html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-body); color:var(--ink-900); -webkit-font-smoothing:antialiased;}
 
 /* ============ LAYOUT ============ */
-.app{display:grid; grid-template-columns:260px 1fr; min-height:100vh;}
+.app{display:grid; grid-template-columns:260px 1fr; min-height:100vh; align-items:start;}
 
 /* ============ SIDEBAR ============ */
-.sidebar{background:var(--ink-900); color:#fff; padding:24px 16px; display:flex; flex-direction:column; border-right:1px solid var(--ink-800);}
+.sidebar{background:var(--ink-900); color:#fff; padding:24px 16px; display:flex; flex-direction:column; border-right:1px solid var(--ink-800); position:sticky; top:0; height:100vh; overflow-y:auto;}
 .brand{display:flex; align-items:center; gap:12px; margin-bottom:32px;}
 .brand-mark{background:var(--amber); color:var(--ink-900); font-family:var(--font-display); font-weight:700; font-size:18px; padding:4px 8px; border-radius:4px; letter-spacing:.05em;}
 .brand-text strong{display:block; font-family:var(--font-display); font-size:18px; text-transform:uppercase; letter-spacing:.02em;}
@@ -203,8 +203,8 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 /* Thanh lọc ngang tiện ích */
 .filter-ribbon {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  flex-wrap: nowrap;
+  gap: 12px;
   background: var(--paper-card);
   border: 1px solid var(--line);
   padding: 14px 18px;
@@ -212,11 +212,14 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
   margin-bottom: 20px;
   box-shadow: var(--shadow-sm);
   align-items: center;
+  overflow-x: auto;
 }
 .filter-group {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  flex: 1 1 130px;
+  min-width: 110px;
 }
 .filter-group label {
   font-size: 11px;
@@ -224,17 +227,22 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
   text-transform: uppercase;
   color: var(--slate);
   letter-spacing: .04em;
+  white-space: nowrap;
 }
 .filter-group select,
 .filter-group input[type="date"] {
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-size: 13px;
   color: var(--ink-900);
   outline: none;
   background: #ffffff;
-  min-width: 155px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-body);
 }
 .filter-group select:focus,
