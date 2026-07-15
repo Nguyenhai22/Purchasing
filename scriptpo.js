@@ -31,6 +31,8 @@ let detailId = null;
 let currentSessionUser = null;
 let currentView = localStorage.getItem("po_tracker_view") || "card";
 let selectedIds = new Set();
+const PAGE_SIZE = 20;
+let currentPage = 1;
 let editingSupplierId = null;
 let editingProductId = null;
 
@@ -690,13 +692,23 @@ function renderList() {
   if (filtered.length === 0) {
     list.innerHTML = "";
     empty.hidden = false;
+    document.getElementById("paginationBar").hidden = true;
     updateBulkBar(filtered);
     return;
   }
   empty.hidden = true;
 
+  const totalCount = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
   list.className = currentView === "table" ? "po-list po-list-table" : "po-list";
-  list.innerHTML = currentView === "table" ? renderTableView(filtered) : renderCardView(filtered);
+  list.innerHTML = currentView === "table" ? renderTableView(pageItems) : renderCardView(pageItems);
+
+  renderPagination(totalCount, totalPages, pageStart, pageItems.length);
 
   // Click để mở chi tiết đơn (bỏ qua khi click vào checkbox)
   list.querySelectorAll("[data-id]").forEach(el => {
@@ -718,6 +730,26 @@ function renderList() {
   });
 
   updateBulkBar(filtered);
+}
+
+function renderPagination(totalCount, totalPages, pageStart, pageLength) {
+  const bar = document.getElementById("paginationBar");
+  const info = document.getElementById("paginationInfo");
+  const pageLabel = document.getElementById("paginationPageLabel");
+  const btnPrev = document.getElementById("btnPrevPage");
+  const btnNext = document.getElementById("btnNextPage");
+
+  bar.hidden = false;
+  const from = pageLength === 0 ? 0 : pageStart + 1;
+  const to = pageStart + pageLength;
+  info.innerHTML = `Hiển thị <strong>${from}-${to}</strong> trong tổng <strong>${totalCount}</strong> đơn`;
+  pageLabel.textContent = `Trang ${currentPage}/${totalPages}`;
+
+  btnPrev.disabled = currentPage <= 1;
+  btnNext.disabled = currentPage >= totalPages;
+
+  btnPrev.onclick = () => { if (currentPage > 1) { currentPage--; renderList(); window.scrollTo({top:0,behavior:"smooth"}); } };
+  btnNext.onclick = () => { if (currentPage < totalPages) { currentPage++; renderList(); window.scrollTo({top:0,behavior:"smooth"}); } };
 }
 
 function itemNamesSummary(order) {
@@ -746,7 +778,7 @@ function renderCardView(filtered) {
           <div class="po-card-top" style="flex:1; margin-bottom:0;">
             <div>
               <div class="po-card-id">${order.code}</div>
-              <div class="po-card-supplier">${escapeHtml(order.supplier)}${itemsSummary ? `<span class="po-card-items"> -- ${escapeHtml(itemsSummary)}</span>` : ""}</div>
+              <div class="po-card-supplier" title="${escapeHtml(order.supplier)}${itemsSummary ? " -- " + escapeHtml(itemsSummary) : ""}">${escapeHtml(order.supplier)}${itemsSummary ? `<span class="po-card-items"> -- ${escapeHtml(itemsSummary)}</span>` : ""}</div>
               <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong>${order.pic_mua_hang ? ` · PIC mua: <strong>${escapeHtml(order.pic_mua_hang)}</strong>` : ""}</div>
               <div class="po-card-meta">Hạn giao: ${fmtDate(order.due_date)} · Tổng: ${fmtMoney(orderTotal(order))} · ${order.items.length} mặt hàng</div>
             </div>
@@ -771,7 +803,7 @@ function renderTableView(filtered) {
       <tr data-id="${order.id}">
         <td class="col-checkbox"><input type="checkbox" class="row-select" data-id="${order.id}"></td>
         <td class="col-code">${order.code}</td>
-        <td class="col-supplier">${escapeHtml(order.supplier)}</td>
+        <td class="col-supplier" title="${escapeHtml(order.supplier)}">${escapeHtml(order.supplier)}</td>
         <td>${escapeHtml(order.owner)}</td>
         <td>${escapeHtml(order.pic_mua_hang || "—")}</td>
         <td>${fmtDate(order.due_date)}</td>
@@ -1424,7 +1456,7 @@ function openDetail(id) {
     <div class="detail-route-wrap">${renderRoute(order)}</div>
     <div class="detail-items">
       <div class="detail-item-row head"><span>Sản phẩm</span><span>ĐVT</span><span>SL đặt</span><span>Đơn giá</span><span>%VAT</span><span>Thực nhận</span></div>
-      ${order.items.map(it => `<div class="detail-item-row"><span>${escapeHtml(it.name)}</span><span>${escapeHtml(it.unit || "—")}</span><span>${it.qty_ordered}</span><span>${fmtMoney(it.unit_price)}</span><span>${it.vat_percent ? it.vat_percent + "%" : "—"}</span><span>${it.qty_received} / ${it.qty_ordered}</span></div>`).join("")}
+      ${order.items.map(it => `<div class="detail-item-row"><span title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</span><span>${escapeHtml(it.unit || "—")}</span><span>${it.qty_ordered}</span><span>${fmtMoney(it.unit_price)}</span><span>${it.vat_percent ? it.vat_percent + "%" : "—"}</span><span>${it.qty_received} / ${it.qty_ordered}</span></div>`).join("")}
     </div>
     ${order.notes ? `<div class="detail-notes">${escapeHtml(order.notes)}</div>` : ""}
   `;
@@ -1536,20 +1568,21 @@ function escapeHtml(str) {
 
 function setupEventListeners() {
   document.getElementById("searchInput").addEventListener("input", (e) => {
-    searchTerm = e.target.value; renderList();
+    searchTerm = e.target.value; currentPage = 1; renderList();
   });
 
-  document.getElementById("filterSupplier").addEventListener("change", renderList);
-  document.getElementById("filterOwner").addEventListener("change", renderList);
-  document.getElementById("filterStartDate").addEventListener("input", renderList);
-  document.getElementById("filterEndDate").addEventListener("input", renderList);
-  document.getElementById("sortField").addEventListener("change", renderList);
+  ["filterSupplier", "filterOwner", "filterStartDate", "filterEndDate", "sortField"].forEach(id => {
+    document.getElementById(id).addEventListener(id === "filterStartDate" || id === "filterEndDate" ? "input" : "change", () => {
+      currentPage = 1; renderList();
+    });
+  });
 
   document.querySelectorAll(".filter-chip").forEach(chip => {
     chip.addEventListener("click", () => {
       document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("is-active"));
       chip.classList.add("is-active");
       currentStatusFilter = chip.dataset.status;
+      currentPage = 1;
       renderList();
     });
   });
@@ -1557,6 +1590,7 @@ function setupEventListeners() {
   document.querySelectorAll(".stat-card").forEach(card => {
     card.addEventListener("click", () => {
       currentQuickFilter = card.dataset.filter;
+      currentPage = 1;
       renderList();
     });
   });
