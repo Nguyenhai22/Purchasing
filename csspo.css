@@ -64,7 +64,7 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 .sidebar-tools{display:flex; flex-direction:column; gap:8px;}
 
 /* ============ MAIN CONTENT ============ */
-.main{padding:32px; display:flex; flex-direction:column; max-width:1200px; width:100%; margin:0 auto;}
+.main{padding:32px; display:flex; flex-direction:column; max-width:1600px; width:100%; margin:0 auto;}
 .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; gap:16px;}
 .search-wrap{position:relative; flex:1; max-width:480px;}
 .search-wrap svg{position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--slate); pointer-events:none;}
