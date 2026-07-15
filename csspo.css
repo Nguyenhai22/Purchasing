@@ -82,7 +82,7 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 
 /* ============ PO LIST & CARDS ============ */
 .po-list{display:flex; flex-direction:column; gap:12px;}
-.po-card{background:var(--paper-card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow-sm); cursor:pointer; transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;}
+.po-card{background:var(--paper-card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow-sm); cursor:pointer; transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease; overflow:hidden;}
 .po-card:hover{transform:translateY(-1px); box-shadow:0 4px 12px rgba(16,27,48,.05); border-color:var(--slate);}
 .po-card-top{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; gap:16px;}
 .po-card-id{font-family:var(--font-mono); font-weight:600; font-size:15px; color:var(--amber); margin-bottom:4px;}
@@ -91,7 +91,7 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 .po-card-meta{font-size:13px; color:var(--slate); margin-top:2px;}
 
 /* Badges */
-.badge{font-size:11px; font-weight:700; text-transform:uppercase; padding:4px 8px; border-radius:4px; letter-spacing:.03em;}
+.badge{font-size:11px; font-weight:700; text-transform:uppercase; padding:4px 8px; border-radius:4px; letter-spacing:.03em; white-space:nowrap; flex-shrink:0;}
 .badge.neutral{background:#f0f2f0; color:var(--slate);}
 .badge.warning{background:var(--amber-bg); color:var(--amber);}
 .badge.danger{background:var(--rust-bg); color:var(--rust);}
@@ -330,7 +330,9 @@ html,body{margin:0; padding:0; background:var(--paper); font-family:var(--font-b
 /* Checkbox on card / table row */
 .po-select-box{position:relative; display:flex; align-items:flex-start; padding-top:2px;}
 .po-select-box input{width:17px; height:17px; cursor:pointer;}
-.po-card-top-inner{display:flex; align-items:flex-start; gap:12px;}
+.po-card-top-inner{display:flex; align-items:flex-start; gap:12px; min-width:0;}
+.po-card-top-inner > *{min-width:0;}
+.po-card-main{min-width:0; flex:1 1 auto;}
 
 /* ==========================================================================
    TABLE VIEW

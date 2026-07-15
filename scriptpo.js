@@ -776,7 +776,7 @@ function renderCardView(filtered) {
             <input type="checkbox" class="row-select" data-id="${order.id}">
           </div>
           <div class="po-card-top" style="flex:1; margin-bottom:0;">
-            <div>
+            <div class="po-card-main">
               <div class="po-card-id">${order.code}</div>
               <div class="po-card-supplier" title="${escapeHtml(order.supplier)}${itemsSummary ? " -- " + escapeHtml(itemsSummary) : ""}">${escapeHtml(order.supplier)}${itemsSummary ? `<span class="po-card-items"> -- ${escapeHtml(itemsSummary)}</span>` : ""}</div>
               <div class="po-card-meta">Phụ trách: <strong>${escapeHtml(order.owner)}</strong>${order.pic_mua_hang ? ` · PIC mua: <strong>${escapeHtml(order.pic_mua_hang)}</strong>` : ""}</div>
