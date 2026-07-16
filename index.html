@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Theo dõi đơn mua hàng</title>
+<title>Tuyến Đơn Hàng — Theo dõi đơn mua hàng</title>
+<meta name="description" content="Theo dõi tiến độ đơn mua hàng, nhà cung cấp và hạn giao trong một nơi duy nhất.">
+<meta name="theme-color" content="#101b30">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23101b30'/%3E%3Ctext x='12' y='16.5' font-family='Arial,sans-serif' font-weight='700' font-size='11' fill='%23c9861f' text-anchor='middle'%3EPO%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="csspo.css">
@@ -13,34 +16,48 @@
 <body>
 
 <div id="authScreen" class="auth-screen">
-  <div class="auth-box">
-    <div class="brand" style="justify-content: center; margin-bottom: 20px;">
-      <span class="brand-mark">PO</span>
-      <div class="brand-text" style="color: var(--ink-900)">
-        <strong>Tuyến Đơn Hàng</strong>
+  <div class="auth-shell">
+    <div class="auth-hero">
+      <div class="auth-hero-top">
+        <div class="brand" style="margin-bottom:0;">
+          <span class="brand-mark">PO</span>
+          <div class="brand-text">
+            <strong>Tuyến Đơn Hàng</strong>
+          </div>
+        </div>
+        <h1>Theo dõi đơn mua hàng<br>chặt chẽ, đúng hạn</h1>
+        <p>Quản lý nhà cung cấp, tiến độ giao hàng và trạng thái từng đơn mua trong một hệ thống duy nhất.</p>
       </div>
+      <ul class="auth-hero-features">
+        <li><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Cảnh báo tự động khi đơn sắp và đã trễ hạn</li>
+        <li><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Nhập dữ liệu nhanh từ file Excel có sẵn</li>
+        <li><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Quản lý nhà cung cấp và danh mục sản phẩm riêng</li>
+      </ul>
+      <div class="auth-hero-foot">© 2026 Tuyến Đơn Hàng · Dữ liệu được bảo mật qua Supabase</div>
     </div>
-    
-    <div class="auth-nav-tabs">
-      <button type="button" id="tabLogin" class="auth-tab active">Đăng nhập</button>
-      <button type="button" id="tabRegister" class="auth-tab">Tạo tài khoản</button>
+
+    <div class="auth-box">
+      <div class="auth-nav-tabs">
+        <button type="button" id="tabLogin" class="auth-tab active">Đăng nhập</button>
+        <button type="button" id="tabRegister" class="auth-tab">Tạo tài khoản</button>
+      </div>
+
+      <h3 id="authTitle">Đăng nhập hệ thống</h3>
+
+      <form id="authForm" onsubmit="return false;">
+        <div class="form-field">
+          <label>Email tài khoản</label>
+          <input type="email" id="authEmail" required placeholder="name@company.com">
+        </div>
+        <div class="form-field" style="margin-top: 12px;">
+          <label>Mật khẩu (tối thiểu 6 ký tự)</label>
+          <input type="password" id="authPassword" required placeholder="••••••••">
+        </div>
+        <button type="submit" id="btnAuthSubmit" class="btn-primary" style="width: 100%; justify-content: center; margin-top: 20px; height: 40px;">
+          Đăng nhập
+        </button>
+      </form>
     </div>
-    
-    <h3 id="authTitle">Đăng nhập hệ thống</h3>
-    
-    <form id="authForm" onsubmit="return false;">
-      <div class="form-field">
-        <label>Email tài khoản</label>
-        <input type="email" id="authEmail" required placeholder="name@company.com">
-      </div>
-      <div class="form-field" style="margin-top: 12px;">
-        <label>Mật khẩu (tối thiểu 6 ký tự)</label>
-        <input type="password" id="authPassword" required placeholder="••••••••">
-      </div>
-      <button type="submit" id="btnAuthSubmit" class="btn-primary" style="width: 100%; justify-content: center; margin-top: 20px; height: 40px;">
-        Đăng nhập
-      </button>
-    </form>
   </div>
 </div>
 
@@ -57,20 +74,32 @@
 
     <div class="stat-stack">
       <div class="stat-card" data-filter="all">
-        <span class="stat-num" id="statAll">0</span>
-        <span class="stat-label">Tổng số đơn</span>
+        <span class="stat-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M20 7l-8-4-8 4v10l8 4 8-4V7zm-8-1.8L17.3 8 12 10.8 6.7 8 12 5.2zM6 9.7l5 2.5v6.9l-5-2.5V9.7zm7 9.4v-6.9l5-2.5v6.9l-5 2.5z"/></svg></span>
+        <div class="stat-body">
+          <span class="stat-num" id="statAll">0</span>
+          <span class="stat-label">Tổng số đơn</span>
+        </div>
       </div>
       <div class="stat-card is-progress" data-filter="active">
-        <span class="stat-num" id="statActive">0</span>
-        <span class="stat-label">Đang xử lý</span>
+        <span class="stat-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 10.4l4.2 2.5-.7 1.2L11 13.4V6h1.5v6.4z"/></svg></span>
+        <div class="stat-body">
+          <span class="stat-num" id="statActive">0</span>
+          <span class="stat-label">Đang xử lý</span>
+        </div>
       </div>
       <div class="stat-card is-warning" data-filter="soon">
-        <span class="stat-num" id="statSoon">0</span>
-        <span class="stat-label">Sắp đến hạn</span>
+        <span class="stat-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2L1 21h22L12 2zm0 4.7L18.7 19H5.3L12 6.7zM11 10h2v5h-2v-5zm0 6.5h2V18h-2v-1.5z"/></svg></span>
+        <div class="stat-body">
+          <span class="stat-num" id="statSoon">0</span>
+          <span class="stat-label">Sắp đến hạn</span>
+        </div>
       </div>
       <div class="stat-card is-danger" data-filter="late">
-        <span class="stat-num" id="statLate">0</span>
-        <span class="stat-label">Đã trễ hạn</span>
+        <span class="stat-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg></span>
+        <div class="stat-body">
+          <span class="stat-num" id="statLate">0</span>
+          <span class="stat-label">Đã trễ hạn</span>
+        </div>
       </div>
     </div>
 
